@@ -10,8 +10,8 @@
 package vm
 
 import (
-	"github.com/pygo/pygo/internal/bytecode"
-	"github.com/pygo/pygo/internal/object"
+	"github.com/alvinjaison/pygo/internal/bytecode"
+	"github.com/alvinjaison/pygo/internal/object"
 )
 
 // Frame holds the execution state of a single function invocation.
@@ -106,6 +106,26 @@ func (f *Frame) Peek() object.Object {
 // PeekN returns the n-th value from the top (0 = top).
 func (f *Frame) PeekN(n int) object.Object {
 	return f.Stack[f.StackTop-1-n]
+}
+
+// RotTwo swaps the top two values on the stack.
+func (f *Frame) RotTwo() {
+	f.Stack[f.StackTop-1], f.Stack[f.StackTop-2] = f.Stack[f.StackTop-2], f.Stack[f.StackTop-1]
+}
+
+// RotThree rotates the top three values: TOS moves to third position,
+// second becomes first (new TOS), third becomes second.
+// Before: [... c b a] (a=TOS)  After: [... a c b] (b=TOS)
+func (f *Frame) RotThree() {
+	a := f.Stack[f.StackTop-1]
+	f.Stack[f.StackTop-1] = f.Stack[f.StackTop-2]
+	f.Stack[f.StackTop-2] = f.Stack[f.StackTop-3]
+	f.Stack[f.StackTop-3] = a
+}
+
+// DupTop duplicates the top-of-stack value.
+func (f *Frame) DupTop() {
+	f.Push(f.Peek())
 }
 
 // PopN pops and discards n values from the stack.

@@ -261,6 +261,12 @@ func WithExecutionTimeout(d time.Duration) Option {
 	return func(c *runtimeConfig) { c.timeout = d }
 }
 
+// WithArgv sets the sys.argv value for the runtime.
+// Default: empty (no arguments).
+func WithArgv(argv []string) Option {
+	return func(c *runtimeConfig) { c.argv = argv }
+}
+
 // WithMaxInstructions sets a limit on bytecode instructions per Run call.
 // Exceeding this raises a RuntimeError.
 // Default: 0 (unlimited).

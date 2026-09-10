@@ -140,7 +140,7 @@ const (
 	// Functions
 	MAKE_FUNCTION Opcode = 132
 	CALL_FUNCTION Opcode = 131
-	CALL_FUNCTION_KW Opcode = 141
+	CALL_FUNCTION_KW Opcode = 143
 	CALL_FUNCTION_EX Opcode = 142
 	RETURN_VALUE  Opcode = 83
 
@@ -189,10 +189,11 @@ const (
 	CmpNotIn
 	CmpIs
 	CmpIsNot
+	CmpExcMatch // Exception matching for except clauses
 )
 
 func (c CompareOp) String() string {
-	return [...]string{"<", "<=", "==", "!=", ">", ">=", "in", "not in", "is", "is not"}[c]
+	return [...]string{"<", "<=", "==", "!=", ">", ">=", "in", "not in", "is", "is not", "exception match"}[c]
 }
 
 // MakeFunctionFlag is a bitmask for the MAKE_FUNCTION instruction's argument.
@@ -310,6 +311,9 @@ var opInfos = map[Opcode]OpInfo{
 	BUILD_SET:   {"BUILD_SET", true},
 	BUILD_MAP:   {"BUILD_MAP", true},
 	BUILD_SLICE: {"BUILD_SLICE", true},
+	BUILD_CONST_KEY_MAP:          {"BUILD_CONST_KEY_MAP", true},
+	BUILD_TUPLE_UNPACK_WITH_CALL: {"BUILD_TUPLE_UNPACK_WITH_CALL", true},
+	BUILD_MAP_UNPACK:             {"BUILD_MAP_UNPACK", true},
 
 	UNPACK_SEQUENCE: {"UNPACK_SEQUENCE", true},
 	UNPACK_EX:       {"UNPACK_EX", true},

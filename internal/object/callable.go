@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/pygo/pygo/internal/bytecode"
+	"github.com/alvinjaison/pygo/internal/bytecode"
 )
 
 // ============================================================
@@ -239,7 +239,10 @@ var (
 	TypeUnboundLocalError *TypeObject
 )
 
-func init() {
+// initExceptionTypes initializes the built-in exception type hierarchy.
+// This MUST be called after BaseExceptionType and ExceptionType are initialized
+// (i.e., from types.go's init function, not from callable.go's init).
+func initExceptionTypes() {
 	arithType := newTypeObject("ArithmeticError", []*TypeObject{ExceptionType}, TypeSlots{})
 	lookupType := newTypeObject("LookupError", []*TypeObject{ExceptionType}, TypeSlots{})
 	nameErrType := newTypeObject("NameError", []*TypeObject{ExceptionType}, TypeSlots{})

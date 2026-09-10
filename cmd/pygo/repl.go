@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/pygo/pygo/pygo"
+	"github.com/alvinjaison/pygo/pygo"
 )
 
 // runREPL starts the interactive Read-Eval-Print Loop and returns an exit code.
@@ -19,7 +19,7 @@ import (
 // (github.com/chzyer/readline) to support line history, editing, and
 // completion.
 func runREPL(cfg *config) int {
-	rt := buildRuntime(cfg)
+	rt := buildRuntime(cfg, []string{""})
 
 	fmt.Printf("PyGo %s\nType \"exit()\" or Ctrl-D to quit.\n", version())
 

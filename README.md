@@ -65,7 +65,7 @@ See [docs/roadmap.md](docs/roadmap.md) for detailed scope and effort estimates.
 ## Installation
 
 ```bash
-go get github.com/pygo/pygo
+go get github.com/alvinjaison/pygo
 ```
 
 Requires Go 1.22+. No other dependencies at runtime.
@@ -83,7 +83,7 @@ import (
     "fmt"
     "log"
 
-    "github.com/pygo/pygo/pygo"
+    "github.com/alvinjaison/pygo/pygo"
 )
 
 func main() {
@@ -165,7 +165,7 @@ pygo                        # interactive REPL
 ## Project Layout
 
 ```
-github.com/pygo/pygo
+github.com/alvinjaison/pygo
 │
 ├── pygo/                   ← Public API (import this)
 │   ├── pygo.go             ← Runtime type, New(), options
@@ -192,7 +192,7 @@ github.com/pygo/pygo
 ```
 
 The `internal/` packages are the only things that ever import each other.
-Consumers only ever import `github.com/pygo/pygo/pygo`.
+Consumers only ever import `github.com/alvinjaison/pygo/pygo`.
 
 ---
 

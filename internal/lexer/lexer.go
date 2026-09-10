@@ -129,7 +129,17 @@ func (l *Lexer) scan() Token {
 	if ch == '\\' {
 		if l.pos+1 < len(l.src) && (l.src[l.pos+1] == '\n' || l.src[l.pos+1] == '\r') {
 			l.advance() // consume backslash
-			l.advance() // consume newline
+			// Consume newline: handle \r\n (CRLF), \r (CR), or \n (LF).
+			if l.src[l.pos] == '\r' {
+				l.pos++
+				if l.pos < len(l.src) && l.src[l.pos] == '\n' {
+					l.pos++
+				}
+			} else {
+				l.pos++
+			}
+			l.line++
+			l.col = 1
 			return l.scan()
 		}
 		l.addError("unexpected backslash")
@@ -161,21 +171,57 @@ func (l *Lexer) scan() Token {
 func (l *Lexer) scanIndent() Token {
 	l.atLineStart = false
 
-	// Count leading spaces/tabs.
+	// Count leading spaces/tabs and detect mixing.
 	indent := 0
+	hasTabs := false
+	hasSpaces := false
 	for l.pos < len(l.src) && (l.src[l.pos] == ' ' || l.src[l.pos] == '\t') {
 		if l.src[l.pos] == '\t' {
+			hasTabs = true
 			// Tabs expand to the next multiple of 8, matching Python's tokenize.
 			indent = (indent/8 + 1) * 8
 		} else {
+			hasSpaces = true
 			indent++
 		}
 		l.advance()
 	}
 
-	// Skip blank lines and comment-only lines.
+	// Skip blank lines and comment-only lines: consume the rest of the line
+	// and restart indentation processing on the next line without emitting
+	// any NEWLINE token.
 	if l.pos < len(l.src) && (l.src[l.pos] == '\n' || l.src[l.pos] == '\r' || l.src[l.pos] == '#') {
+		// Skip comment text if present.
+		if l.pos < len(l.src) && l.src[l.pos] == '#' {
+			l.skipComment()
+		}
+		// Consume the newline character(s).
+		if l.pos < len(l.src) && (l.src[l.pos] == '\r' || l.src[l.pos] == '\n') {
+			if l.src[l.pos] == '\r' {
+				l.pos++
+				if l.pos < len(l.src) && l.src[l.pos] == '\n' {
+					l.pos++
+				}
+			} else {
+				l.pos++
+			}
+			l.line++
+			l.col = 1
+		}
+		// Restart indentation processing on the next line.
+		l.atLineStart = true
 		return l.scan()
+	}
+
+	// Report SyntaxError for inconsistent indentation (tab/space mixing)
+	// only when the indentation is non-zero and both tabs and spaces are used.
+	if hasTabs && hasSpaces && indent > 0 {
+		l.addError("inconsistent use of tabs and spaces in indentation")
+	}
+
+	// If we reached EOF after consuming whitespace, don't compare indentation.
+	if l.pos >= len(l.src) {
+		return l.emitEOF()
 	}
 
 	current := l.indentStack[len(l.indentStack)-1]
@@ -187,14 +233,22 @@ func (l *Lexer) scanIndent() Token {
 
 	case indent < current:
 		// Pop indent levels and queue DEDENT tokens.
+		var dedents []Token
 		for len(l.indentStack) > 1 && l.indentStack[len(l.indentStack)-1] > indent {
 			l.indentStack = l.indentStack[:len(l.indentStack)-1]
-			l.pending = append(l.pending, l.makeToken(DEDENT, ""))
+			dedents = append(dedents, l.makeToken(DEDENT, ""))
 		}
 		if l.indentStack[len(l.indentStack)-1] != indent {
 			l.addError("unindent does not match any outer indentation level")
 		}
-		return l.scan()
+		if len(dedents) == 0 {
+			return l.scan()
+		}
+		// Return the first DEDENT; queue the rest in pending.
+		if len(dedents) > 1 {
+			l.pending = append(l.pending, dedents[1:]...)
+		}
+		return dedents[0]
 
 	default:
 		// Same indent level — no INDENT/DEDENT needed.
@@ -205,11 +259,15 @@ func (l *Lexer) scanIndent() Token {
 // scanNewline handles physical newlines and emits a logical NEWLINE token
 // when we are not inside parentheses/brackets/braces.
 func (l *Lexer) scanNewline() Token {
-	start := l.pos
-	if l.src[l.pos] == '\r' && l.pos+1 < len(l.src) && l.src[l.pos+1] == '\n' {
-		l.advance() // CR
+	startLine, startCol := l.line, l.col
+	if l.src[l.pos] == '\r' {
+		l.pos++ // skip CR without triggering advance() side effects
+		if l.pos < len(l.src) && l.src[l.pos] == '\n' {
+			l.pos++ // skip LF in CRLF
+		}
+	} else {
+		l.pos++ // skip LF
 	}
-	l.advance() // LF or lone CR
 	l.line++
 	l.col = 1
 
@@ -219,16 +277,25 @@ func (l *Lexer) scanNewline() Token {
 	}
 
 	l.atLineStart = true
-	_ = start
-	return l.makeToken(NEWLINE, "\n")
+	return l.makeTokenAt(NEWLINE, "\n", startLine, startCol)
 }
 
 // emitEOF emits the EOF token and any pending DEDENTs to close open blocks.
 func (l *Lexer) emitEOF() Token {
 	if len(l.indentStack) > 1 {
-		l.indentStack = l.indentStack[:len(l.indentStack)-1]
+		// Emit all remaining DEDENT tokens before EOF.
+		var dedents []Token
+		for len(l.indentStack) > 1 {
+			l.indentStack = l.indentStack[:len(l.indentStack)-1]
+			dedents = append(dedents, l.makeToken(DEDENT, ""))
+		}
+		// Queue remaining DEDENTs and EOF in pending.
+		if len(dedents) > 1 {
+			l.pending = append(l.pending, dedents[1:]...)
+		}
 		l.pending = append(l.pending, l.makeToken(EOF, ""))
-		return l.makeToken(DEDENT, "")
+		l.done = true
+		return dedents[0]
 	}
 	l.done = true
 	return l.makeToken(EOF, "")
@@ -237,93 +304,347 @@ func (l *Lexer) emitEOF() Token {
 // scanString scans a string literal (all flavors: raw, bytes, f-string,
 // single/double quoted, triple-quoted).
 func (l *Lexer) scanString() Token {
-	// TODO(Phase 1): Implement full string literal scanning including:
-	//   - All prefix combinations (r, b, f, rb, br, fr, rf)
-	//   - Single and double quotes
-	//   - Triple-quoted strings (multi-line)
-	//   - Escape sequences
-	//   - f-string expression detection (Phase 2)
-	//
-	// Placeholder: scan a simple single/double-quoted string.
 	startLine, startCol := l.line, l.col
-	_ = startLine
-	_ = startCol
 
-	var sb strings.Builder
+	// Consume prefix characters (r, b, f, u, rb, br, fr, rf).
+	isRaw := false
+	isBytes := false
+	for l.pos < len(l.src) {
+		ch := unicode.ToLower(l.src[l.pos])
+		if ch == 'r' {
+			isRaw = true
+			l.advance()
+		} else if ch == 'b' {
+			isBytes = true
+			l.advance()
+		} else if ch == 'f' || ch == 'u' {
+			l.advance()
+		} else {
+			break
+		}
+	}
+
+	// Determine quote character and whether this is triple-quoted.
 	quote := l.src[l.pos]
 	l.advance()
 
-	for l.pos < len(l.src) && l.src[l.pos] != quote {
-		if l.src[l.pos] == '\\' && l.pos+1 < len(l.src) {
-			l.advance()
-			sb.WriteRune(l.src[l.pos])
-		} else {
-			sb.WriteRune(l.src[l.pos])
-		}
+	triple := false
+	if l.pos+1 < len(l.src) && l.src[l.pos] == quote && l.src[l.pos+1] == quote {
+		triple = true
+		l.advance()
 		l.advance()
 	}
-	if l.pos < len(l.src) {
-		l.advance() // closing quote
+
+	var sb strings.Builder
+
+	if triple {
+		// Triple-quoted string: scan until closing triple-quote.
+		for {
+			if l.pos >= len(l.src) {
+				l.errors = append(l.errors, LexError{
+					Line:    startLine,
+					Col:     startCol,
+					Message: "SyntaxError: unterminated triple-quoted string literal",
+				})
+				tokType := STRING
+				if isBytes {
+					tokType = BYTES
+				}
+				return l.makeTokenAt(tokType, sb.String(), startLine, startCol)
+			}
+			// Check for closing triple-quote.
+			if l.src[l.pos] == quote && l.pos+2 < len(l.src) && l.src[l.pos+1] == quote && l.src[l.pos+2] == quote {
+				l.advance()
+				l.advance()
+				l.advance()
+				break
+			}
+			if l.src[l.pos] == '\\' && !isRaw {
+				esc := l.scanEscapeSequence()
+				sb.WriteString(esc)
+			} else {
+				sb.WriteRune(l.src[l.pos])
+				l.advance()
+			}
+		}
+	} else {
+		// Single-quoted string: scan until closing quote or end of line.
+		for l.pos < len(l.src) && l.src[l.pos] != quote {
+			if l.src[l.pos] == '\n' || l.src[l.pos] == '\r' {
+				l.errors = append(l.errors, LexError{
+					Line:    startLine,
+					Col:     startCol,
+					Message: "SyntaxError: unterminated string literal",
+				})
+				tokType := STRING
+				if isBytes {
+					tokType = BYTES
+				}
+				return l.makeTokenAt(tokType, sb.String(), startLine, startCol)
+			}
+			if l.src[l.pos] == '\\' && !isRaw {
+				esc := l.scanEscapeSequence()
+				sb.WriteString(esc)
+			} else {
+				sb.WriteRune(l.src[l.pos])
+				l.advance()
+			}
+		}
+		if l.pos >= len(l.src) {
+			l.errors = append(l.errors, LexError{
+				Line:    startLine,
+				Col:     startCol,
+				Message: "SyntaxError: unterminated string literal",
+			})
+			tokType := STRING
+			if isBytes {
+				tokType = BYTES
+			}
+			return l.makeTokenAt(tokType, sb.String(), startLine, startCol)
+		}
+		l.advance() // consume closing quote
 	}
 
-	return l.makeToken(STRING, sb.String())
+	tokType := STRING
+	if isBytes {
+		tokType = BYTES
+	}
+	return l.makeTokenAt(tokType, sb.String(), startLine, startCol)
+}
+
+// scanEscapeSequence processes an escape sequence starting at the backslash.
+// The lexer position should be at the backslash character.
+// Returns the decoded escape sequence as a string.
+func (l *Lexer) scanEscapeSequence() string {
+	l.advance() // consume the backslash
+	if l.pos >= len(l.src) {
+		return "\\"
+	}
+
+	ch := l.src[l.pos]
+	l.advance()
+
+	switch ch {
+	case 'n':
+		return "\n"
+	case 't':
+		return "\t"
+	case 'r':
+		return "\r"
+	case '\\':
+		return "\\"
+	case '\'':
+		return "'"
+	case '"':
+		return "\""
+	case 'a':
+		return "\a"
+	case 'b':
+		return "\b"
+	case 'f':
+		return "\f"
+	case 'v':
+		return "\v"
+	case '0':
+		return "\x00"
+	case 'x':
+		// \xHH — exactly 2 hex digits
+		if l.pos+1 < len(l.src) && isHexDigit(l.src[l.pos]) && isHexDigit(l.src[l.pos+1]) {
+			val := hexVal(l.src[l.pos])*16 + hexVal(l.src[l.pos+1])
+			l.advance()
+			l.advance()
+			return string(rune(val))
+		}
+		return "\\x"
+	case 'u':
+		// \uHHHH — exactly 4 hex digits
+		if l.pos+3 < len(l.src) && isHexDigit(l.src[l.pos]) && isHexDigit(l.src[l.pos+1]) && isHexDigit(l.src[l.pos+2]) && isHexDigit(l.src[l.pos+3]) {
+			val := hexVal(l.src[l.pos])<<12 | hexVal(l.src[l.pos+1])<<8 | hexVal(l.src[l.pos+2])<<4 | hexVal(l.src[l.pos+3])
+			l.advance()
+			l.advance()
+			l.advance()
+			l.advance()
+			return string(rune(val))
+		}
+		return "\\u"
+	case 'U':
+		// \UHHHHHHHH — exactly 8 hex digits
+		if l.pos+7 < len(l.src) {
+			allHex := true
+			for i := 0; i < 8; i++ {
+				if !isHexDigit(l.src[l.pos+i]) {
+					allHex = false
+					break
+				}
+			}
+			if allHex {
+				var val rune
+				for i := 0; i < 8; i++ {
+					val = val<<4 | rune(hexVal(l.src[l.pos]))
+					l.advance()
+				}
+				return string(val)
+			}
+		}
+		return "\\U"
+	case '\n':
+		// Escaped newline: line continuation inside string (not raw)
+		return ""
+	default:
+		// Unknown escape: keep the backslash and character as-is (Python behavior)
+		return "\\" + string(ch)
+	}
+}
+
+// isHexDigit reports whether a rune is a hexadecimal digit.
+func isHexDigit(r rune) bool {
+	return (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')
+}
+
+// hexVal returns the numeric value of a hex digit.
+func hexVal(r rune) rune {
+	switch {
+	case r >= '0' && r <= '9':
+		return r - '0'
+	case r >= 'a' && r <= 'f':
+		return r - 'a' + 10
+	case r >= 'A' && r <= 'F':
+		return r - 'A' + 10
+	default:
+		return 0
+	}
 }
 
 // scanNumber scans an integer or float literal.
+// Supports: decimal, hex (0x/0X), octal (0o/0O), binary (0b/0B),
+// underscore separators, float with decimal/exponent notation.
 func (l *Lexer) scanNumber() Token {
-	// TODO(Phase 1): Full number scanning including:
-	//   - Decimal integers with underscores (1_000_000)
-	//   - Hex (0xFF), octal (0o77), binary (0b1010)
-	//   - Floats (3.14, 1e10, 1.5e-3)
-	//   - Complex numbers (3+4j)
-	//
-	// Placeholder: scan a simple decimal integer or float.
+	startLine, startCol := l.line, l.col
 	start := l.pos
-	isFloat := false
 
-	for l.pos < len(l.src) && isDigit(l.src[l.pos]) {
-		l.advance()
+	// Check for leading dot (e.g., .5)
+	if l.src[l.pos] == '.' {
+		return l.scanFloatFromDot(start, startLine, startCol)
 	}
+
+	// Check for 0x, 0o, 0b prefixes
+	if l.src[l.pos] == '0' && l.pos+1 < len(l.src) {
+		next := unicode.ToLower(l.src[l.pos+1])
+		switch next {
+		case 'x':
+			return l.scanHex(start, startLine, startCol)
+		case 'o':
+			return l.scanOctal(start, startLine, startCol)
+		case 'b':
+			return l.scanBinary(start, startLine, startCol)
+		}
+	}
+
+	// Decimal integer or float.
+	l.scanDecimalDigits()
+
+	// Check for float indicators.
 	if l.pos < len(l.src) && l.src[l.pos] == '.' {
-		isFloat = true
 		l.advance()
-		for l.pos < len(l.src) && isDigit(l.src[l.pos]) {
-			l.advance()
+		l.scanDecimalDigits()
+		// Check for exponent
+		if l.pos < len(l.src) && (l.src[l.pos] == 'e' || l.src[l.pos] == 'E') {
+			l.scanExponent()
 		}
+		val := string(l.src[start:l.pos])
+		return l.makeTokenAt(FLOAT, val, startLine, startCol)
 	}
+
 	if l.pos < len(l.src) && (l.src[l.pos] == 'e' || l.src[l.pos] == 'E') {
-		isFloat = true
-		l.advance()
-		if l.pos < len(l.src) && (l.src[l.pos] == '+' || l.src[l.pos] == '-') {
-			l.advance()
-		}
-		for l.pos < len(l.src) && isDigit(l.src[l.pos]) {
-			l.advance()
-		}
+		l.scanExponent()
+		val := string(l.src[start:l.pos])
+		return l.makeTokenAt(FLOAT, val, startLine, startCol)
 	}
 
 	val := string(l.src[start:l.pos])
-	if isFloat {
-		return l.makeToken(FLOAT, val)
+	return l.makeTokenAt(INTEGER, val, startLine, startCol)
+}
+
+// scanFloatFromDot scans a float that starts with a dot (e.g., .5, .5e10).
+func (l *Lexer) scanFloatFromDot(start int, startLine, startCol int) Token {
+	l.advance() // consume the dot
+	l.scanDecimalDigits()
+	if l.pos < len(l.src) && (l.src[l.pos] == 'e' || l.src[l.pos] == 'E') {
+		l.scanExponent()
 	}
-	return l.makeToken(INTEGER, val)
+	val := string(l.src[start:l.pos])
+	return l.makeTokenAt(FLOAT, val, startLine, startCol)
+}
+
+// scanHex scans a hexadecimal integer (0x or 0X prefix).
+func (l *Lexer) scanHex(start int, startLine, startCol int) Token {
+	l.advance() // consume '0'
+	l.advance() // consume 'x' or 'X'
+	for l.pos < len(l.src) && (isHexDigit(l.src[l.pos]) || l.src[l.pos] == '_') {
+		l.advance()
+	}
+	val := string(l.src[start:l.pos])
+	return l.makeTokenAt(INTEGER, val, startLine, startCol)
+}
+
+// scanOctal scans an octal integer (0o or 0O prefix).
+func (l *Lexer) scanOctal(start int, startLine, startCol int) Token {
+	l.advance() // consume '0'
+	l.advance() // consume 'o' or 'O'
+	for l.pos < len(l.src) && (isOctalDigit(l.src[l.pos]) || l.src[l.pos] == '_') {
+		l.advance()
+	}
+	val := string(l.src[start:l.pos])
+	return l.makeTokenAt(INTEGER, val, startLine, startCol)
+}
+
+// scanBinary scans a binary integer (0b or 0B prefix).
+func (l *Lexer) scanBinary(start int, startLine, startCol int) Token {
+	l.advance() // consume '0'
+	l.advance() // consume 'b' or 'B'
+	for l.pos < len(l.src) && (l.src[l.pos] == '0' || l.src[l.pos] == '1' || l.src[l.pos] == '_') {
+		l.advance()
+	}
+	val := string(l.src[start:l.pos])
+	return l.makeTokenAt(INTEGER, val, startLine, startCol)
+}
+
+// scanDecimalDigits consumes decimal digits and underscore separators.
+func (l *Lexer) scanDecimalDigits() {
+	for l.pos < len(l.src) && (isDigit(l.src[l.pos]) || l.src[l.pos] == '_') {
+		l.advance()
+	}
+}
+
+// scanExponent consumes an exponent part (e/E followed by optional sign and digits).
+func (l *Lexer) scanExponent() {
+	l.advance() // consume 'e' or 'E'
+	if l.pos < len(l.src) && (l.src[l.pos] == '+' || l.src[l.pos] == '-') {
+		l.advance()
+	}
+	l.scanDecimalDigits()
+}
+
+// isOctalDigit reports whether a rune is an octal digit.
+func isOctalDigit(r rune) bool {
+	return r >= '0' && r <= '7'
 }
 
 // scanIdentOrKeyword scans an identifier or keyword.
 func (l *Lexer) scanIdentOrKeyword() Token {
+	startLine, startCol := l.line, l.col
 	start := l.pos
 	for l.pos < len(l.src) && isIdentContinue(l.src[l.pos]) {
 		l.advance()
 	}
 	value := string(l.src[start:l.pos])
 	tt := LookupKeyword(value)
-	return l.makeToken(tt, value)
+	return l.makeTokenAt(tt, value, startLine, startCol)
 }
 
 // scanOperator scans a single- or multi-character operator or delimiter.
 func (l *Lexer) scanOperator() Token {
-	// TODO(Phase 1): Implement full operator scanning.
-	// Placeholder for the most common operators.
+	startLine, startCol := l.line, l.col
 	ch := l.src[l.pos]
 	l.advance()
 
@@ -331,165 +652,165 @@ func (l *Lexer) scanOperator() Token {
 	case '+':
 		if l.pos < len(l.src) && l.src[l.pos] == '=' {
 			l.advance()
-			return l.makeToken(PLUSEQUAL, "+=")
+			return l.makeTokenAt(PLUSEQUAL, "+=", startLine, startCol)
 		}
-		return l.makeToken(PLUS, "+")
+		return l.makeTokenAt(PLUS, "+", startLine, startCol)
 	case '-':
 		if l.pos < len(l.src) && l.src[l.pos] == '=' {
 			l.advance()
-			return l.makeToken(MINUSEQUAL, "-=")
+			return l.makeTokenAt(MINUSEQUAL, "-=", startLine, startCol)
 		}
 		if l.pos < len(l.src) && l.src[l.pos] == '>' {
 			l.advance()
-			return l.makeToken(RARROW, "->")
+			return l.makeTokenAt(RARROW, "->", startLine, startCol)
 		}
-		return l.makeToken(MINUS, "-")
+		return l.makeTokenAt(MINUS, "-", startLine, startCol)
 	case '*':
 		if l.pos < len(l.src) && l.src[l.pos] == '*' {
 			l.advance()
 			if l.pos < len(l.src) && l.src[l.pos] == '=' {
 				l.advance()
-				return l.makeToken(DOUBLESTAREQUAL, "**=")
+				return l.makeTokenAt(DOUBLESTAREQUAL, "**=", startLine, startCol)
 			}
-			return l.makeToken(DOUBLESTAR, "**")
+			return l.makeTokenAt(DOUBLESTAR, "**", startLine, startCol)
 		}
 		if l.pos < len(l.src) && l.src[l.pos] == '=' {
 			l.advance()
-			return l.makeToken(STAREQUAL, "*=")
+			return l.makeTokenAt(STAREQUAL, "*=", startLine, startCol)
 		}
-		return l.makeToken(STAR, "*")
+		return l.makeTokenAt(STAR, "*", startLine, startCol)
 	case '/':
 		if l.pos < len(l.src) && l.src[l.pos] == '/' {
 			l.advance()
 			if l.pos < len(l.src) && l.src[l.pos] == '=' {
 				l.advance()
-				return l.makeToken(DOUBLESLASHEQUAL, "//=")
+				return l.makeTokenAt(DOUBLESLASHEQUAL, "//=", startLine, startCol)
 			}
-			return l.makeToken(DOUBLESLASH, "//")
+			return l.makeTokenAt(DOUBLESLASH, "//", startLine, startCol)
 		}
 		if l.pos < len(l.src) && l.src[l.pos] == '=' {
 			l.advance()
-			return l.makeToken(SLASHEQUAL, "/=")
+			return l.makeTokenAt(SLASHEQUAL, "/=", startLine, startCol)
 		}
-		return l.makeToken(SLASH, "/")
+		return l.makeTokenAt(SLASH, "/", startLine, startCol)
 	case '%':
 		if l.pos < len(l.src) && l.src[l.pos] == '=' {
 			l.advance()
-			return l.makeToken(PERCENTEQUAL, "%=")
+			return l.makeTokenAt(PERCENTEQUAL, "%=", startLine, startCol)
 		}
-		return l.makeToken(PERCENT, "%")
+		return l.makeTokenAt(PERCENT, "%", startLine, startCol)
 	case '=':
 		if l.pos < len(l.src) && l.src[l.pos] == '=' {
 			l.advance()
-			return l.makeToken(EQEQUAL, "==")
+			return l.makeTokenAt(EQEQUAL, "==", startLine, startCol)
 		}
-		return l.makeToken(EQUAL, "=")
+		return l.makeTokenAt(EQUAL, "=", startLine, startCol)
 	case '!':
 		if l.pos < len(l.src) && l.src[l.pos] == '=' {
 			l.advance()
-			return l.makeToken(NOTEQUAL, "!=")
+			return l.makeTokenAt(NOTEQUAL, "!=", startLine, startCol)
 		}
 		l.addError("invalid character '!'")
-		return l.makeToken(ILLEGAL, "!")
+		return l.makeTokenAt(ILLEGAL, "!", startLine, startCol)
 	case '<':
 		if l.pos < len(l.src) && l.src[l.pos] == '<' {
 			l.advance()
 			if l.pos < len(l.src) && l.src[l.pos] == '=' {
 				l.advance()
-				return l.makeToken(LSHIFTEQUAL, "<<=")
+				return l.makeTokenAt(LSHIFTEQUAL, "<<=", startLine, startCol)
 			}
-			return l.makeToken(LSHIFT, "<<")
+			return l.makeTokenAt(LSHIFT, "<<", startLine, startCol)
 		}
 		if l.pos < len(l.src) && l.src[l.pos] == '=' {
 			l.advance()
-			return l.makeToken(LESSEQUAL, "<=")
+			return l.makeTokenAt(LESSEQUAL, "<=", startLine, startCol)
 		}
-		return l.makeToken(LESS, "<")
+		return l.makeTokenAt(LESS, "<", startLine, startCol)
 	case '>':
 		if l.pos < len(l.src) && l.src[l.pos] == '>' {
 			l.advance()
 			if l.pos < len(l.src) && l.src[l.pos] == '=' {
 				l.advance()
-				return l.makeToken(RSHIFTEQUAL, ">>=")
+				return l.makeTokenAt(RSHIFTEQUAL, ">>=", startLine, startCol)
 			}
-			return l.makeToken(RSHIFT, ">>")
+			return l.makeTokenAt(RSHIFT, ">>", startLine, startCol)
 		}
 		if l.pos < len(l.src) && l.src[l.pos] == '=' {
 			l.advance()
-			return l.makeToken(GREATEREQUAL, ">=")
+			return l.makeTokenAt(GREATEREQUAL, ">=", startLine, startCol)
 		}
-		return l.makeToken(GREATER, ">")
+		return l.makeTokenAt(GREATER, ">", startLine, startCol)
 	case ':':
 		if l.pos < len(l.src) && l.src[l.pos] == '=' {
 			l.advance()
-			return l.makeToken(WALRUS, ":=")
+			return l.makeTokenAt(WALRUS, ":=", startLine, startCol)
 		}
-		return l.makeToken(COLON, ":")
+		return l.makeTokenAt(COLON, ":", startLine, startCol)
 	case '(':
 		l.parenDepth++
-		return l.makeToken(LPAREN, "(")
+		return l.makeTokenAt(LPAREN, "(", startLine, startCol)
 	case ')':
 		if l.parenDepth > 0 {
 			l.parenDepth--
 		}
-		return l.makeToken(RPAREN, ")")
+		return l.makeTokenAt(RPAREN, ")", startLine, startCol)
 	case '[':
 		l.parenDepth++
-		return l.makeToken(LBRACKET, "[")
+		return l.makeTokenAt(LBRACKET, "[", startLine, startCol)
 	case ']':
 		if l.parenDepth > 0 {
 			l.parenDepth--
 		}
-		return l.makeToken(RBRACKET, "]")
+		return l.makeTokenAt(RBRACKET, "]", startLine, startCol)
 	case '{':
 		l.parenDepth++
-		return l.makeToken(LBRACE, "{")
+		return l.makeTokenAt(LBRACE, "{", startLine, startCol)
 	case '}':
 		if l.parenDepth > 0 {
 			l.parenDepth--
 		}
-		return l.makeToken(RBRACE, "}")
+		return l.makeTokenAt(RBRACE, "}", startLine, startCol)
 	case ',':
-		return l.makeToken(COMMA, ",")
+		return l.makeTokenAt(COMMA, ",", startLine, startCol)
 	case '.':
 		if l.pos+1 < len(l.src) && l.src[l.pos] == '.' && l.src[l.pos+1] == '.' {
 			l.advance()
 			l.advance()
-			return l.makeToken(ELLIPSIS, "...")
+			return l.makeTokenAt(ELLIPSIS, "...", startLine, startCol)
 		}
-		return l.makeToken(DOT, ".")
+		return l.makeTokenAt(DOT, ".", startLine, startCol)
 	case '&':
 		if l.pos < len(l.src) && l.src[l.pos] == '=' {
 			l.advance()
-			return l.makeToken(AMPEREQUAL, "&=")
+			return l.makeTokenAt(AMPEREQUAL, "&=", startLine, startCol)
 		}
-		return l.makeToken(AMPER, "&")
+		return l.makeTokenAt(AMPER, "&", startLine, startCol)
 	case '|':
 		if l.pos < len(l.src) && l.src[l.pos] == '=' {
 			l.advance()
-			return l.makeToken(PIPEEQUAL, "|=")
+			return l.makeTokenAt(PIPEEQUAL, "|=", startLine, startCol)
 		}
-		return l.makeToken(PIPE, "|")
+		return l.makeTokenAt(PIPE, "|", startLine, startCol)
 	case '^':
 		if l.pos < len(l.src) && l.src[l.pos] == '=' {
 			l.advance()
-			return l.makeToken(CARETEQUAL, "^=")
+			return l.makeTokenAt(CARETEQUAL, "^=", startLine, startCol)
 		}
-		return l.makeToken(CARET, "^")
+		return l.makeTokenAt(CARET, "^", startLine, startCol)
 	case '~':
-		return l.makeToken(TILDE, "~")
+		return l.makeTokenAt(TILDE, "~", startLine, startCol)
 	case '@':
 		if l.pos < len(l.src) && l.src[l.pos] == '=' {
 			l.advance()
-			return l.makeToken(ATEQUAL, "@=")
+			return l.makeTokenAt(ATEQUAL, "@=", startLine, startCol)
 		}
-		return l.makeToken(AT, "@")
+		return l.makeTokenAt(AT, "@", startLine, startCol)
 	case ';':
-		return l.makeToken(SEMICOLON, ";")
+		return l.makeTokenAt(SEMICOLON, ";", startLine, startCol)
 	}
 
 	l.addError(fmt.Sprintf("unexpected character %q", ch))
-	return l.makeToken(ILLEGAL, string(ch))
+	return l.makeTokenAt(ILLEGAL, string(ch), startLine, startCol)
 }
 
 // --- helpers ---
@@ -527,8 +848,24 @@ func (l *Lexer) makeToken(tt TokenType, value string) Token {
 	return Token{
 		Type:  tt,
 		Value: value,
-		Line:  l.line,
-		Col:   l.col,
+		Pos: Position{
+			Filename: l.filename,
+			Line:     l.line,
+			Column:   l.col,
+		},
+	}
+}
+
+// makeTokenAt constructs a token at a specific source position.
+func (l *Lexer) makeTokenAt(tt TokenType, value string, line, col int) Token {
+	return Token{
+		Type:  tt,
+		Value: value,
+		Pos: Position{
+			Filename: l.filename,
+			Line:     line,
+			Column:   col,
+		},
 	}
 }
 

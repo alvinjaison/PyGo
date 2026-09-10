@@ -1,0 +1,46 @@
+# Binaries
+pygo-bin
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Compiled Go binaries (no extension)
+pygo/pygo
+
+# Test binaries and artifacts
+*.test
+*.out
+test_output.txt
+*.log
+
+# xlr-scan output (compatibility reports and dumped script corpora)
+scan-*.txt
+*-report.json
+
+# XLR template exports — contain internal URLs, servers, and secret references.
+# Kept local, never committed.
+templates/
+
+# Property-based test artifacts
+**/testdata/rapid/
+
+# Scratch/test scripts
+test.py
+
+# CPython bytecode cache, created when running testdata scripts under python3
+# to regenerate .expected files
+__pycache__/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Kiro specs
+.kiro/

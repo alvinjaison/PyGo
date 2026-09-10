@@ -32,13 +32,13 @@
 ## 2. Package Structure
 
 ```
-github.com/pygo/pygo         ← import this package
+github.com/alvinjaison/pygo         ← import this package
 ```
 
 Consumers never import `internal/` packages directly. Go's module system enforces this.
 
 ```go
-import "github.com/pygo/pygo"
+import "github.com/alvinjaison/pygo"
 
 rt := pygo.New()
 ```

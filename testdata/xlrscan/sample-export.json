@@ -1,0 +1,82 @@
+{
+  "id": "Applications/Folderabc/Releaseabc",
+  "type": "xlrelease.Release",
+  "title": "Sample release template",
+  "phases": [
+    {
+      "id": "Phase1",
+      "type": "xlrelease.Phase",
+      "title": "Build",
+      "tasks": [
+        {
+          "id": "Task1",
+          "type": "xlrelease.ScriptTask",
+          "title": "Set a release variable",
+          "script": "value = releaseVariables['buildNumber']\nprint('build number is ' + str(value))\nreleaseVariables['previousBuild'] = value\n"
+        },
+        {
+          "id": "Task2",
+          "type": "xlrelease.ScriptTask",
+          "title": "Call an HTTP endpoint and parse JSON",
+          "script": "import json\nimport urllib2\n\nreq = urllib2.Request('https://example.internal/api/builds')\nresponse = urllib2.urlopen(req)\npayload = json.loads(response.read())\nfor build in payload['builds']:\n    print 'found build %s' % build['id']\n"
+        },
+        {
+          "id": "Task3",
+          "type": "xlrelease.ScriptTask",
+          "title": "Use Java date formatting",
+          "script": "from java.text import SimpleDateFormat\nfrom java.util import Date\n\nfmt = SimpleDateFormat('yyyy-MM-dd')\nreleaseVariables['today'] = fmt.format(Date())\n"
+        },
+        {
+          "id": "Task4",
+          "type": "xlrelease.ScriptTask",
+          "title": "Filter tasks with a comprehension and a helper class",
+          "script": "class TaskFilter(object):\n    def __init__(self, prefix):\n        self.prefix = prefix\n\n    def matches(self, title):\n        return title.startswith(self.prefix)\n\nf = TaskFilter('Deploy')\nrelease = releaseApi.getRelease(getCurrentRelease().id)\nnames = [t.title for t in release.tasks if f.matches(t.title)]\nprint(sorted(names))\n"
+        },
+        {
+          "id": "Task5",
+          "type": "xlrelease.ScriptTask",
+          "title": "Simple arithmetic and string building",
+          "script": "total = 0\nfor n in range(1, 5):\n    total = total + n\n\nmessage = 'total is ' + str(total)\nprint(message)\n"
+        },
+        {
+          "id": "Task6",
+          "type": "xlrelease.ScriptTask",
+          "title": "Comment on the current task",
+          "precondition": "result = releaseVariables['runComment'] == 'yes'",
+          "script": "comment = 'processed by {0}'.format(task.owner)\ntaskApi.commentTask(task.id, comment)\n"
+        },
+        {
+          "id": "Task7",
+          "type": "xlrelease.GateTask",
+          "title": "Manual gate",
+          "conditions": []
+        },
+        {
+          "id": "Task8",
+          "type": "jenkins.Build",
+          "title": "Plugin task with no inline script",
+          "jobName": "build-app"
+        }
+      ]
+    },
+    {
+      "id": "Phase2",
+      "type": "xlrelease.Phase",
+      "title": "Deploy",
+      "tasks": [
+        {
+          "id": "Task9",
+          "type": "xlrelease.ScriptTask",
+          "title": "Report with an f-string and a dict comprehension",
+          "script": "release = releaseApi.getRelease(getCurrentRelease().id)\ncounts = {t.status: 0 for t in release.tasks}\nfor t in release.tasks:\n    counts[t.status] = counts[t.status] + 1\n\nfor status, n in counts.items():\n    print(f'{status}: {n}')\n"
+        },
+        {
+          "id": "Task10",
+          "type": "xlrelease.ScriptTask",
+          "title": "Legacy helper using has_key and except comma",
+          "script": "config = configurationApi.getConfiguration('Connections/Http/prod')\n\ntry:\n    if config.has_key('url'):\n        print config['url']\nexcept Exception, e:\n    print 'failed: ' + str(e)\n"
+        }
+      ]
+    }
+  ]
+}

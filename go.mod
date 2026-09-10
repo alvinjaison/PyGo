@@ -1,7 +1,5 @@
-module github.com/pygo/pygo
+module github.com/alvinjaison/pygo
 
 go 1.22
 
-require (
-	github.com/chzyer/readline v1.5.1
-)
+require pgregory.net/rapid v1.1.0

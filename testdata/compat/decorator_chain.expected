@@ -1,0 +1,11 @@
+['build:c', 'build:b', 'build:a']
+a(b(c[core]))
+replaced
+(3, 1, [])
+(6, 2, [])
+(10, 4, [])
+(6, 3, ['flag', 'mode'])
+8
+40
+81
+21

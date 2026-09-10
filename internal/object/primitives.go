@@ -2,9 +2,11 @@ package object
 
 import (
 	"fmt"
+	"math"
 	"math/big"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // ============================================================
@@ -14,11 +16,24 @@ import (
 // NoneObject is the type of Python's None singleton.
 type NoneObject struct{}
 
-func (n *NoneObject) Type() *TypeObject { return NoneType }
-func (n *NoneObject) String() string    { return "None" }
-func (n *NoneObject) Repr() string      { return "None" }
-func (n *NoneObject) Hash() (int64, error) { return 0, nil }
+func (n *NoneObject) Type() *TypeObject    { return NoneType }
+func (n *NoneObject) String() string        { return "None" }
+func (n *NoneObject) Repr() string          { return "None" }
+func (n *NoneObject) Hash() (int64, error)  { return 0, nil }
 func (n *NoneObject) IsTrue() (bool, error) { return false, nil }
+
+// RichCompare implements Comparable for NoneObject.
+// None supports only identity-based == and !=.
+func (n *NoneObject) RichCompare(other Object, op CompareOp) (Object, error) {
+	switch op {
+	case OpEq:
+		return BoolFrom(IsNone(other)), nil
+	case OpNotEq:
+		return BoolFrom(!IsNone(other)), nil
+	default:
+		return NotImplemented, nil
+	}
+}
 
 // ============================================================
 // notImplementedObject
@@ -69,6 +84,28 @@ func (b *BoolObject) Hash() (int64, error) {
 	return 0, nil
 }
 func (b *BoolObject) IsTrue() (bool, error) { return b.Value, nil }
+
+// RichCompare implements Comparable for BoolObject.
+// Bool is a subtype of int, so comparisons work numerically.
+func (b *BoolObject) RichCompare(other Object, op CompareOp) (Object, error) {
+	var bInt int64
+	if b.Value {
+		bInt = 1
+	}
+	switch o := other.(type) {
+	case *BoolObject:
+		var oInt int64
+		if o.Value {
+			oInt = 1
+		}
+		return boolCompareInt64(bInt, oInt, op), nil
+	case *IntObject:
+		return intCompare(big.NewInt(bInt), o.Value, op), nil
+	case *FloatObject:
+		return floatCompareVals(float64(bInt), o.Value, op), nil
+	}
+	return NotImplemented, nil
+}
 
 // ============================================================
 // IntObject
@@ -133,6 +170,25 @@ func (i *IntObject) Hash() (int64, error) {
 }
 func (i *IntObject) IsTrue() (bool, error) { return i.Value.Sign() != 0, nil }
 
+// RichCompare implements Comparable for IntObject.
+func (i *IntObject) RichCompare(other Object, op CompareOp) (Object, error) {
+	switch o := other.(type) {
+	case *IntObject:
+		return intCompare(i.Value, o.Value, op), nil
+	case *BoolObject:
+		var oInt int64
+		if o.Value {
+			oInt = 1
+		}
+		return intCompare(i.Value, big.NewInt(oInt), op), nil
+	case *FloatObject:
+		// Compare int to float: convert int to float64 if it fits precisely,
+		// otherwise use big.Float comparison for correctness.
+		return intFloatCompare(i.Value, o.Value, op), nil
+	}
+	return NotImplemented, nil
+}
+
 // Int64 returns the int64 value of this integer, and whether it fits.
 func (i *IntObject) Int64() (int64, bool) {
 	if i.Value.IsInt64() {
@@ -157,12 +213,20 @@ func (f *FloatObject) String() string    { return strconv.FormatFloat(f.Value, '
 func (f *FloatObject) Repr() string      { return f.String() }
 func (f *FloatObject) Hash() (int64, error) {
 	// hash(1.0) must equal hash(1): integers and floats that are equal share a hash.
-	// Use CPython's algorithm from Objects/object.c _Py_HashDouble.
-	if f.Value == float64(int64(f.Value)) {
-		return IntFrom(int64(f.Value)).Hash()
+	// If the float is an exact integer, use the integer hash.
+	if f.Value == math.Trunc(f.Value) && !math.IsInf(f.Value, 0) {
+		// Value is an integer — delegate to IntObject.Hash() for consistency.
+		intVal := int64(f.Value)
+		if float64(intVal) == f.Value {
+			return IntFrom(intVal).Hash()
+		}
+		// For very large float integers that don't fit in int64, use big.Int.
+		bf := new(big.Float).SetFloat64(f.Value)
+		bi, _ := bf.Int(nil)
+		return IntFromBig(bi).Hash()
 	}
-	// Non-integer float: use bit pattern.
-	bits := *(*uint64)(ptr(&f.Value)) // safe: float64 and uint64 are same size
+	// Non-integer float: use a stable hash of the bit pattern.
+	bits := math.Float64bits(f.Value)
 	h := int64(bits>>32) ^ int64(bits&0xffffffff)
 	if h == -1 {
 		h = -2
@@ -171,29 +235,21 @@ func (f *FloatObject) Hash() (int64, error) {
 }
 func (f *FloatObject) IsTrue() (bool, error) { return f.Value != 0.0, nil }
 
-// ptr is a helper for float hash — avoids unsafe by using a well-defined
-// integer encoding of the float's bit pattern.
-func ptr(v *float64) *uint64 {
-	// Use big.Float bit pattern as a proxy — avoids unsafe.Pointer.
-	// This is not a cryptographic hash; just needs to be consistent.
-	bits := floatBits(v)
-	return &bits
-}
-
-func floatBits(v *float64) uint64 {
-	// Encode float64 as uint64 using Go's math/bits semantics.
-	// We avoid unsafe by using math.Float64bits-equivalent logic.
-	f := *v
-	if f == 0 {
-		return 0
+// RichCompare implements Comparable for FloatObject.
+func (f *FloatObject) RichCompare(other Object, op CompareOp) (Object, error) {
+	switch o := other.(type) {
+	case *FloatObject:
+		return floatCompareVals(f.Value, o.Value, op), nil
+	case *IntObject:
+		return intFloatCompare(o.Value, f.Value, reflectCompareOpPrim(op)), nil
+	case *BoolObject:
+		var oFloat float64
+		if o.Value {
+			oFloat = 1
+		}
+		return floatCompareVals(f.Value, oFloat, op), nil
 	}
-	// Use string encoding as a portable bit representation.
-	s := strconv.FormatFloat(f, 'b', -1, 64)
-	var h uint64
-	for _, c := range s {
-		h = h*31 + uint64(c)
-	}
-	return h
+	return NotImplemented, nil
 }
 
 // ============================================================
@@ -252,4 +308,226 @@ func (s *StrObject) Hash() (int64, error) {
 	return result, nil
 }
 func (s *StrObject) IsTrue() (bool, error) { return len(s.Value) > 0, nil }
-func (s *StrObject) Len() int               { return len([]rune(s.Value)) } // Unicode codepoint length
+func (s *StrObject) Len() int              { return utf8.RuneCountInString(s.Value) } // Unicode codepoint length
+
+// Index returns the i-th Unicode code point as a single-character string.
+// Supports negative indexing (from end). Returns IndexError if out of range.
+func (s *StrObject) Index(i int) (*StrObject, error) {
+	length := s.Len()
+	if i < 0 {
+		i += length
+	}
+	if i < 0 || i >= length {
+		return nil, fmt.Errorf("IndexError: string index out of range")
+	}
+	// Walk code points to find the i-th one.
+	pos := 0
+	for j := 0; j < i; j++ {
+		_, size := utf8.DecodeRuneInString(s.Value[pos:])
+		pos += size
+	}
+	_, size := utf8.DecodeRuneInString(s.Value[pos:])
+	return StrFrom(s.Value[pos : pos+size]), nil
+}
+
+// Iter returns a string iterator that yields individual code points.
+func (s *StrObject) Iter() (Iterator, error) {
+	return &strIterator{str: s.Value, pos: 0}, nil
+}
+
+// RichCompare implements Comparable for StrObject.
+// Strings are compared lexicographically by Unicode code points.
+func (s *StrObject) RichCompare(other Object, op CompareOp) (Object, error) {
+	o, ok := other.(*StrObject)
+	if !ok {
+		return NotImplemented, nil
+	}
+	switch op {
+	case OpEq:
+		return BoolFrom(s.Value == o.Value), nil
+	case OpNotEq:
+		return BoolFrom(s.Value != o.Value), nil
+	case OpLt:
+		return BoolFrom(s.Value < o.Value), nil
+	case OpLtE:
+		return BoolFrom(s.Value <= o.Value), nil
+	case OpGt:
+		return BoolFrom(s.Value > o.Value), nil
+	case OpGtE:
+		return BoolFrom(s.Value >= o.Value), nil
+	default:
+		return NotImplemented, nil
+	}
+}
+
+// Contains implements the `in` operator for substrings.
+func (s *StrObject) Contains(item Object) (bool, error) {
+	sub, ok := item.(*StrObject)
+	if !ok {
+		return false, fmt.Errorf("TypeError: 'in <string>' requires string as left operand, not %s", item.Type().Name())
+	}
+	return strings.Contains(s.Value, sub.Value), nil
+}
+
+// ============================================================
+// strIterator
+// ============================================================
+
+// strIterator yields individual Unicode code points from a string.
+type strIterator struct {
+	str string
+	pos int
+}
+
+func (it *strIterator) Type() *TypeObject { return ObjectType } // TODO: str_iterator type
+func (it *strIterator) String() string    { return "<str_iterator>" }
+func (it *strIterator) Repr() string      { return it.String() }
+func (it *strIterator) Next() (Object, error) {
+	if it.pos >= len(it.str) {
+		return nil, ErrStopIteration
+	}
+	r, size := utf8.DecodeRuneInString(it.str[it.pos:])
+	it.pos += size
+	return StrFrom(string(r)), nil
+}
+
+// ============================================================
+// Comparison helpers
+// ============================================================
+
+// boolCompareInt64 compares two int64 values according to op.
+func boolCompareInt64(a, b int64, op CompareOp) Object {
+	switch op {
+	case OpEq:
+		return BoolFrom(a == b)
+	case OpNotEq:
+		return BoolFrom(a != b)
+	case OpLt:
+		return BoolFrom(a < b)
+	case OpLtE:
+		return BoolFrom(a <= b)
+	case OpGt:
+		return BoolFrom(a > b)
+	case OpGtE:
+		return BoolFrom(a >= b)
+	default:
+		return NotImplemented
+	}
+}
+
+// intCompare compares two *big.Int values according to op.
+func intCompare(a, b *big.Int, op CompareOp) Object {
+	cmp := a.Cmp(b)
+	switch op {
+	case OpEq:
+		return BoolFrom(cmp == 0)
+	case OpNotEq:
+		return BoolFrom(cmp != 0)
+	case OpLt:
+		return BoolFrom(cmp < 0)
+	case OpLtE:
+		return BoolFrom(cmp <= 0)
+	case OpGt:
+		return BoolFrom(cmp > 0)
+	case OpGtE:
+		return BoolFrom(cmp >= 0)
+	default:
+		return NotImplemented
+	}
+}
+
+// intFloatCompare compares an integer to a float value.
+// The result is "int op float". For exact comparison when the integer
+// doesn't fit in float64 precisely, we use big.Float.
+func intFloatCompare(intVal *big.Int, floatVal float64, op CompareOp) Object {
+	// Handle NaN: NaN is not equal to anything, and all ordering
+	// comparisons with NaN return false.
+	if math.IsNaN(floatVal) {
+		switch op {
+		case OpNotEq:
+			return PyTrue
+		default:
+			return PyFalse
+		}
+	}
+
+	// Handle infinities.
+	if math.IsInf(floatVal, 1) {
+		// +Inf is greater than any integer.
+		switch op {
+		case OpLt, OpLtE, OpNotEq:
+			return PyTrue
+		default:
+			return PyFalse
+		}
+	}
+	if math.IsInf(floatVal, -1) {
+		// -Inf is less than any integer.
+		switch op {
+		case OpGt, OpGtE, OpNotEq:
+			return PyTrue
+		default:
+			return PyFalse
+		}
+	}
+
+	// Use big.Float for exact comparison.
+	bigInt := new(big.Float).SetInt(intVal)
+	bigFloat := new(big.Float).SetFloat64(floatVal)
+	cmp := bigInt.Cmp(bigFloat)
+
+	switch op {
+	case OpEq:
+		return BoolFrom(cmp == 0)
+	case OpNotEq:
+		return BoolFrom(cmp != 0)
+	case OpLt:
+		return BoolFrom(cmp < 0)
+	case OpLtE:
+		return BoolFrom(cmp <= 0)
+	case OpGt:
+		return BoolFrom(cmp > 0)
+	case OpGtE:
+		return BoolFrom(cmp >= 0)
+	default:
+		return NotImplemented
+	}
+}
+
+// floatCompareVals compares two float64 values according to op.
+func floatCompareVals(a, b float64, op CompareOp) Object {
+	switch op {
+	case OpEq:
+		return BoolFrom(a == b)
+	case OpNotEq:
+		return BoolFrom(a != b)
+	case OpLt:
+		return BoolFrom(a < b)
+	case OpLtE:
+		return BoolFrom(a <= b)
+	case OpGt:
+		return BoolFrom(a > b)
+	case OpGtE:
+		return BoolFrom(a >= b)
+	default:
+		return NotImplemented
+	}
+}
+
+// reflectCompareOpPrim reflects a comparison op (swaps left/right sense).
+// Used when we need to compare "int op float" but have the function
+// expecting "float op int".
+func reflectCompareOpPrim(op CompareOp) CompareOp {
+	switch op {
+	case OpLt:
+		return OpGt
+	case OpLtE:
+		return OpGtE
+	case OpGt:
+		return OpLt
+	case OpGtE:
+		return OpLtE
+	default:
+		return op
+	}
+}

@@ -481,7 +481,7 @@ runtime.Close()  [optional, future]
 ## 7. Package Layout
 
 ```
-github.com/pygo/pygo
+github.com/alvinjaison/pygo
 ├── go.mod
 ├── go.sum
 │

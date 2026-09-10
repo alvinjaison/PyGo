@@ -315,4 +315,11 @@ func init() {
 
 	// Fix up BoolType base after IntType is initialized.
 	BoolType.bases = []*TypeObject{IntType}
+
+	// Initialize exception type hierarchy now that BaseExceptionType and
+	// ExceptionType are available (defined in callable.go).
+	initExceptionTypes()
+
+	// Register operator slots on types now that they exist.
+	registerOperatorSlots()
 }

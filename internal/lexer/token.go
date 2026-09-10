@@ -128,20 +128,32 @@ const (
 	BACKSLASH // \ (line continuation — consumed by lexer, not emitted)
 )
 
+// Position holds source location information for a token.
+type Position struct {
+	Filename string
+	Line     int // 1-indexed
+	Column   int // 1-indexed
+}
+
+// String returns a human-readable "file:line:col" representation.
+func (p Position) String() string {
+	if p.Filename != "" {
+		return fmt.Sprintf("%s:%d:%d", p.Filename, p.Line, p.Column)
+	}
+	return fmt.Sprintf("%d:%d", p.Line, p.Column)
+}
+
 // Token is a single lexical element of Python source.
 type Token struct {
-	Type    TokenType
-	Value   string // raw source text of the token
-	Line    int    // 1-indexed source line
-	Col     int    // 1-indexed column of the first character
-	EndLine int    // 1-indexed line of the last character
-	EndCol  int    // 1-indexed column after the last character
+	Type  TokenType
+	Value string   // raw source text of the token
+	Pos   Position // source position of the first character
 }
 
 // String returns a human-readable representation of the token, useful in
 // error messages and debug output.
 func (t Token) String() string {
-	return fmt.Sprintf("Token(%s, %q, %d:%d)", t.Type, t.Value, t.Line, t.Col)
+	return fmt.Sprintf("Token(%s, %q, %d:%d)", t.Type, t.Value, t.Pos.Line, t.Pos.Column)
 }
 
 // IsKeyword reports whether the token is a Python keyword.

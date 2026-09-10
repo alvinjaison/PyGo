@@ -99,16 +99,20 @@ type Container interface {
 type CompareOp int
 
 const (
-	OpLt CompareOp = iota
-	OpLtE
-	OpEq
-	OpNotEq
-	OpGt
-	OpGtE
+	OpLt    CompareOp = iota // <
+	OpLtE                    // <=
+	OpEq                     // ==
+	OpNotEq                  // !=
+	OpGt                     // >
+	OpGtE                    // >=
+	OpIn                     // in
+	OpNotIn                  // not in
+	OpIs                     // is
+	OpIsNot                  // is not
 )
 
 func (c CompareOp) String() string {
-	return [...]string{"<", "<=", "==", "!=", ">", ">="}[c]
+	return [...]string{"<", "<=", "==", "!=", ">", ">=", "in", "not in", "is", "is not"}[c]
 }
 
 // ============================================================

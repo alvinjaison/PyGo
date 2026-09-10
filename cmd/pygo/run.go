@@ -4,22 +4,23 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"time"
 
-	"github.com/pygo/pygo/pygo"
+	"github.com/alvinjaison/pygo/pygo"
 )
 
 // runScript executes a .py file and returns the process exit code.
 func runScript(cfg *config) int {
-	rt := buildRuntime(cfg)
-	ctx := buildContext(cfg)
-
-	// Set sys.argv.
-	argv := append([]string{cfg.script}, cfg.scriptArgs...)
-	if err := rt.Set("__argv__", argv); err != nil {
-		fmt.Fprintln(os.Stderr, "pygo: failed to set sys.argv:", err)
+	// Check file existence early to give a clean error message with exit code 2.
+	if _, err := os.Stat(cfg.script); os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "pygo: can't open file %q: [Errno 2] No such file or directory\n", cfg.script)
 		return 2
 	}
+
+	// Build argv: [script, arg1, arg2, ...]
+	argv := append([]string{cfg.script}, cfg.scriptArgs...)
+
+	rt := buildRuntime(cfg, argv)
+	ctx := buildContext(cfg)
 
 	if err := rt.RunFileContext(ctx, cfg.script); err != nil {
 		return handleError(err)
@@ -29,7 +30,10 @@ func runScript(cfg *config) int {
 
 // runCommand executes a -c source string and returns the process exit code.
 func runCommand(cfg *config) int {
-	rt := buildRuntime(cfg)
+	// For -c mode, argv[0] is "-c" per CPython convention.
+	argv := append([]string{"-c"}, cfg.scriptArgs...)
+
+	rt := buildRuntime(cfg, argv)
 	ctx := buildContext(cfg)
 
 	if err := rt.RunStringContext(ctx, cfg.command); err != nil {
@@ -39,10 +43,11 @@ func runCommand(cfg *config) int {
 }
 
 // buildRuntime creates a pygo.Runtime from the given config.
-func buildRuntime(cfg *config) *pygo.Runtime {
+func buildRuntime(cfg *config, argv []string) *pygo.Runtime {
 	opts := []pygo.Option{
 		pygo.WithMaxCallDepth(cfg.maxDepth),
 		pygo.WithStdlib(!cfg.noStdlib),
+		pygo.WithArgv(argv),
 	}
 	if len(cfg.searchPath) > 0 {
 		opts = append(opts, pygo.WithSearchPath(cfg.searchPath))
@@ -93,6 +98,3 @@ func parseSystemExitCode(msg string) int {
 	fmt.Fprintln(os.Stderr, msg)
 	return 1
 }
-
-// ensure time import is used
-var _ = time.Second

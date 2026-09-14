@@ -188,3 +188,28 @@ func NewSlice(lower, upper, step Expr, pos Position) *Slice {
 func NewStarred(value Expr, ctx ExprContext, pos Position) *Starred {
 	return &Starred{baseExpr: baseExpr{baseNode{pos}}, Value: value, Ctx: ctx}
 }
+
+// NewComprehension creates a single for/if clause of a comprehension.
+func NewComprehension(target, iter Expr, ifs []Expr, isAsync bool) *Comprehension {
+	return &Comprehension{Target: target, Iter: iter, Ifs: ifs, IsAsync: isAsync}
+}
+
+// NewListComp creates a ListComp node.
+func NewListComp(elt Expr, generators []*Comprehension, pos Position) *ListComp {
+	return &ListComp{baseExpr: baseExpr{baseNode{pos}}, Elt: elt, Generators: generators}
+}
+
+// NewSetComp creates a SetComp node.
+func NewSetComp(elt Expr, generators []*Comprehension, pos Position) *SetComp {
+	return &SetComp{baseExpr: baseExpr{baseNode{pos}}, Elt: elt, Generators: generators}
+}
+
+// NewDictComp creates a DictComp node.
+func NewDictComp(key, value Expr, generators []*Comprehension, pos Position) *DictComp {
+	return &DictComp{baseExpr: baseExpr{baseNode{pos}}, Key: key, Value: value, Generators: generators}
+}
+
+// NewGeneratorExp creates a GeneratorExp node.
+func NewGeneratorExp(elt Expr, generators []*Comprehension, pos Position) *GeneratorExp {
+	return &GeneratorExp{baseExpr: baseExpr{baseNode{pos}}, Elt: elt, Generators: generators}
+}

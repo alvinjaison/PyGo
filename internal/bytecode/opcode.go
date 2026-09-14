@@ -23,19 +23,19 @@ type Instruction struct {
 
 // OpInfo describes an opcode's mnemonic and whether it takes an argument.
 type OpInfo struct {
-	Name    string
-	HasArg  bool
+	Name   string
+	HasArg bool
 }
 
 // Opcode constants.
 const (
 	// Stack manipulation
-	POP_TOP    Opcode = 1
-	ROT_TWO    Opcode = 2
-	ROT_THREE  Opcode = 3
-	DUP_TOP    Opcode = 4
+	POP_TOP     Opcode = 1
+	ROT_TWO     Opcode = 2
+	ROT_THREE   Opcode = 3
+	DUP_TOP     Opcode = 4
 	DUP_TOP_TWO Opcode = 5
-	ROT_FOUR   Opcode = 6
+	ROT_FOUR    Opcode = 6
 
 	// Unary operators
 	UNARY_POSITIVE Opcode = 10
@@ -83,15 +83,22 @@ const (
 	PRINT_EXPR Opcode = 70 // REPL expression printing
 
 	// Sequence building
-	BUILD_TUPLE          Opcode = 102
-	BUILD_LIST           Opcode = 103
-	BUILD_SET            Opcode = 104
-	BUILD_MAP            Opcode = 105
-	BUILD_CONST_KEY_MAP  Opcode = 141
-	BUILD_STRING         Opcode = 157
+	BUILD_TUPLE                  Opcode = 102
+	BUILD_LIST                   Opcode = 103
+	BUILD_SET                    Opcode = 104
+	BUILD_MAP                    Opcode = 105
+	BUILD_CONST_KEY_MAP          Opcode = 141
+	BUILD_STRING                 Opcode = 157
 	BUILD_TUPLE_UNPACK_WITH_CALL Opcode = 158
-	BUILD_MAP_UNPACK     Opcode = 150
-	BUILD_SLICE          Opcode = 133
+	BUILD_MAP_UNPACK             Opcode = 150
+	BUILD_SLICE                  Opcode = 133
+
+	// Comprehension accumulators. The argument is how far below TOS the
+	// accumulator collection sits, so nested comprehensions can target the
+	// correct container. Numbers match CPython 3.8-3.9.
+	LIST_APPEND Opcode = 145 // append TOS to list at stack[-arg]
+	SET_ADD     Opcode = 146 // add TOS to set at stack[-arg]
+	MAP_ADD     Opcode = 147 // stack[-arg][TOS1] = TOS (key is TOS1, value is TOS)
 
 	// Load / store (argument = index into names/consts/fastlocals)
 	LOAD_CONST  Opcode = 100
@@ -133,16 +140,16 @@ const (
 	JUMP_IF_FALSE_OR_POP Opcode = 111
 
 	// Iteration
-	GET_ITER        Opcode = 68
+	GET_ITER            Opcode = 68
 	GET_YIELD_FROM_ITER Opcode = 69
-	FOR_ITER        Opcode = 93
+	FOR_ITER            Opcode = 93
 
 	// Functions
-	MAKE_FUNCTION Opcode = 132
-	CALL_FUNCTION Opcode = 131
+	MAKE_FUNCTION    Opcode = 132
+	CALL_FUNCTION    Opcode = 131
 	CALL_FUNCTION_KW Opcode = 143
 	CALL_FUNCTION_EX Opcode = 142
-	RETURN_VALUE  Opcode = 83
+	RETURN_VALUE     Opcode = 83
 
 	// Exceptions
 	RAISE_VARARGS     Opcode = 130
@@ -223,11 +230,11 @@ func (op Opcode) HasArg() bool {
 }
 
 var opInfos = map[Opcode]OpInfo{
-	POP_TOP:    {"POP_TOP", false},
-	ROT_TWO:    {"ROT_TWO", false},
-	ROT_THREE:  {"ROT_THREE", false},
-	DUP_TOP:    {"DUP_TOP", false},
-	NOP:        {"NOP", false},
+	POP_TOP:      {"POP_TOP", false},
+	ROT_TWO:      {"ROT_TWO", false},
+	ROT_THREE:    {"ROT_THREE", false},
+	DUP_TOP:      {"DUP_TOP", false},
+	NOP:          {"NOP", false},
 	RETURN_VALUE: {"RETURN_VALUE", false},
 
 	UNARY_POSITIVE: {"UNARY_POSITIVE", false},
@@ -306,14 +313,18 @@ var opInfos = map[Opcode]OpInfo{
 
 	COMPARE_OP: {"COMPARE_OP", true},
 
-	BUILD_TUPLE: {"BUILD_TUPLE", true},
-	BUILD_LIST:  {"BUILD_LIST", true},
-	BUILD_SET:   {"BUILD_SET", true},
-	BUILD_MAP:   {"BUILD_MAP", true},
-	BUILD_SLICE: {"BUILD_SLICE", true},
+	BUILD_TUPLE:                  {"BUILD_TUPLE", true},
+	BUILD_LIST:                   {"BUILD_LIST", true},
+	BUILD_SET:                    {"BUILD_SET", true},
+	BUILD_MAP:                    {"BUILD_MAP", true},
+	BUILD_SLICE:                  {"BUILD_SLICE", true},
 	BUILD_CONST_KEY_MAP:          {"BUILD_CONST_KEY_MAP", true},
 	BUILD_TUPLE_UNPACK_WITH_CALL: {"BUILD_TUPLE_UNPACK_WITH_CALL", true},
 	BUILD_MAP_UNPACK:             {"BUILD_MAP_UNPACK", true},
+
+	LIST_APPEND: {"LIST_APPEND", true},
+	SET_ADD:     {"SET_ADD", true},
+	MAP_ADD:     {"MAP_ADD", true},
 
 	UNPACK_SEQUENCE: {"UNPACK_SEQUENCE", true},
 	UNPACK_EX:       {"UNPACK_EX", true},

@@ -480,6 +480,24 @@ func (sc *scopeCompiler) compileExpr(expr ast.Expr) error {
 		}
 		sc.emit(bytecode.BUILD_MAP, uint32(len(e.Keys)))
 
+	case *ast.ListComp:
+		if err := sc.compileComprehension(comprehensionList, e.Elt, nil, e.Generators, e.Pos()); err != nil {
+			return err
+		}
+
+	case *ast.DictComp:
+		if err := sc.compileComprehension(comprehensionDict, e.Value, e.Key, e.Generators, e.Pos()); err != nil {
+			return err
+		}
+
+	case *ast.SetComp:
+		return fmt.Errorf(
+			"compiler: set comprehensions are not supported yet (requires a set type); at %s", e.Pos())
+
+	case *ast.GeneratorExp:
+		return fmt.Errorf(
+			"compiler: generator expressions are not supported yet (requires generator frames); at %s", e.Pos())
+
 	case *ast.IfExp:
 		// Ternary: body if test else orelse
 		if err := sc.compileExpr(e.Test); err != nil {
@@ -526,6 +544,155 @@ func (sc *scopeCompiler) compileExpr(expr ast.Expr) error {
 		return fmt.Errorf("compiler: unsupported expression type %T at %s", expr, expr.Pos())
 	}
 	return nil
+}
+
+// comprehensionKind selects which collection a comprehension accumulates into.
+type comprehensionKind int
+
+const (
+	comprehensionList comprehensionKind = iota
+	comprehensionDict
+)
+
+// compArgName is the synthetic parameter name for the outermost iterable passed
+// into a comprehension's implicit function. It mirrors CPython's ".0" and, being
+// non-identifier, cannot collide with a user variable.
+const compArgName = ".0"
+
+// compResultName is the synthetic local that holds the accumulator.
+const compResultName = ".result"
+
+// compileComprehension lowers a list or dict comprehension to an implicit
+// nested function, exactly as CPython does. The function takes the outermost
+// iterable as its single argument (".0"), builds an accumulator, runs the
+// nested for/if clauses, and returns the accumulator. The comprehension's own
+// loop variables are locals of this function, and any names it borrows from the
+// enclosing scope become free variables through the normal closure machinery.
+//
+// For a dict comprehension keyExpr is the key and eltExpr is the value; for a
+// list comprehension keyExpr is nil.
+func (sc *scopeCompiler) compileComprehension(kind comprehensionKind, eltExpr, keyExpr ast.Expr, generators []*ast.Comprehension, pos ast.Position) error {
+	if len(generators) == 0 {
+		return fmt.Errorf("compiler: comprehension with no clauses at %s", pos)
+	}
+	for _, gen := range generators {
+		if gen.IsAsync {
+			return fmt.Errorf("compiler: async comprehensions are not supported yet; at %s", pos)
+		}
+	}
+
+	name := "<listcomp>"
+	if kind == comprehensionDict {
+		name = "<dictcomp>"
+	}
+
+	// Build the synthetic function body:
+	//   .result = []            (or {} for dict)
+	//   for <t0> in .0:
+	//       for <t1> in <iter1>:
+	//           if <cond>: ...
+	//               .result.append(elt)      (list)
+	//               .result[key] = value     (dict)
+	//   return .result
+	resultName := ast.NewName(compResultName, ast.Store, pos)
+	var initValue ast.Expr
+	if kind == comprehensionDict {
+		initValue = ast.NewDict(nil, nil, pos)
+	} else {
+		initValue = ast.NewList(nil, ast.Load, pos)
+	}
+	initStmt := ast.NewAssign([]ast.Expr{resultName}, initValue, pos)
+
+	// The innermost action appends/inserts into .result.
+	var action ast.Stmt
+	if kind == comprehensionDict {
+		target := ast.NewSubscript(
+			ast.NewName(compResultName, ast.Load, pos),
+			keyExpr, ast.Store, pos)
+		action = ast.NewAssign([]ast.Expr{target}, eltExpr, pos)
+	} else {
+		appendCall := ast.NewCall(
+			ast.NewAttribute(ast.NewName(compResultName, ast.Load, pos), "append", ast.Load, pos),
+			[]ast.Expr{eltExpr}, nil, pos)
+		action = ast.NewExprStmt(appendCall, pos)
+	}
+
+	// Wrap the action in the for/if clauses, innermost first.
+	loopBody := buildComprehensionLoops(generators, action, pos)
+
+	// Assemble the function body.
+	body := []ast.Stmt{initStmt}
+	body = append(body, loopBody...)
+	body = append(body, ast.NewReturn(ast.NewName(compResultName, ast.Load, pos), pos))
+
+	// The single parameter is the outermost iterable.
+	args := &ast.Arguments{Args: []*ast.Arg{ast.NewArg(compArgName, nil, pos)}}
+	funcDef := ast.NewFunctionDef(name, args, body, nil, nil, pos)
+
+	// Compile the implicit function into a nested Code object.
+	code, err := sc.compiler.compileFunction(funcDef, sc.symtab)
+	if err != nil {
+		return err
+	}
+
+	// Emit the closure tuple if the comprehension captures enclosing names.
+	var makeFuncFlags uint32
+	if len(code.Freevars) > 0 {
+		for _, freevarName := range code.Freevars {
+			idx := sc.closureIndex(freevarName)
+			sc.emit(bytecode.LOAD_CLOSURE, uint32(idx))
+		}
+		sc.emit(bytecode.BUILD_TUPLE, uint32(len(code.Freevars)))
+		makeFuncFlags |= uint32(object.MakeFuncHasClosure)
+	}
+
+	// MAKE_FUNCTION expects the code object then the qualified name on top.
+	codeIdx := sc.addConstant(code)
+	sc.emit(bytecode.LOAD_CONST, uint32(codeIdx))
+	nameIdx := sc.addConstant(name)
+	sc.emit(bytecode.LOAD_CONST, uint32(nameIdx))
+	sc.emit(bytecode.MAKE_FUNCTION, makeFuncFlags)
+
+	// Evaluate the outermost iterable in the ENCLOSING scope, get its iterator,
+	// and call the implicit function with it. This is why only the first
+	// clause's iterable can close over enclosing locals the same way a normal
+	// expression would — matching CPython semantics.
+	if err := sc.compileExpr(generators[0].Iter); err != nil {
+		return err
+	}
+	sc.emit(bytecode.GET_ITER, 0)
+	sc.emit(bytecode.CALL_FUNCTION, 1)
+
+	return nil
+}
+
+// buildComprehensionLoops nests the for/if clauses of a comprehension around the
+// innermost action statement. The first generator's iterable is NOT emitted
+// here — it is supplied as the implicit function's ".0" argument — so the first
+// clause iterates over ".0".
+func buildComprehensionLoops(generators []*ast.Comprehension, action ast.Stmt, pos ast.Position) []ast.Stmt {
+	// Innermost first: start from the action and wrap outward.
+	inner := []ast.Stmt{action}
+
+	for i := len(generators) - 1; i >= 0; i-- {
+		gen := generators[i]
+
+		// Apply the clause's filters, innermost filter closest to the action.
+		for j := len(gen.Ifs) - 1; j >= 0; j-- {
+			inner = []ast.Stmt{ast.NewIf(gen.Ifs[j], inner, nil, pos)}
+		}
+
+		// The first clause iterates over the implicit ".0" argument; later
+		// clauses iterate over their own expressions.
+		var iter ast.Expr
+		if i == 0 {
+			iter = ast.NewName(compArgName, ast.Load, pos)
+		} else {
+			iter = gen.Iter
+		}
+		inner = []ast.Stmt{ast.NewFor(gen.Target, iter, inner, nil, pos)}
+	}
+	return inner
 }
 
 // compileConstant emits LOAD_CONST for a literal value.

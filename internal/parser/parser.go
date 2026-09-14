@@ -340,7 +340,7 @@ func (p *parser) parseParameters() (*ast.Arguments, error) {
 		return args, nil
 	}
 
-	seenStar := false   // after * or *args
+	seenStar := false    // after * or *args
 	seenDefault := false // after first positional default
 
 	for {
@@ -1808,6 +1808,18 @@ func (p *parser) parseParenExpr() (ast.Expr, error) {
 		return nil, err
 	}
 
+	// Generator expression: (elt for target in iter ...)
+	if p.at(lexer.FOR) || p.atAsyncFor() {
+		generators, err := p.parseComprehensionClauses()
+		if err != nil {
+			return nil, err
+		}
+		if _, err := p.expect(lexer.RPAREN); err != nil {
+			return nil, err
+		}
+		return ast.NewGeneratorExp(first, generators, pos), nil
+	}
+
 	// Check if it's a tuple (has comma)
 	if p.match(lexer.COMMA) {
 		elts := []ast.Expr{first}
@@ -1834,26 +1846,104 @@ func (p *parser) parseParenExpr() (ast.Expr, error) {
 	return first, nil
 }
 
-// parseListLiteral parses [elem, elem, ...]
+// parseListLiteral parses a list display: either a comprehension
+// [elt for target in iter ...] or a plain list [elem, elem, ...].
 func (p *parser) parseListLiteral() (ast.Expr, error) {
 	pos := p.pos()
 	p.advance() // consume '['
 
-	var elts []ast.Expr
-	for !p.at(lexer.RBRACKET) && !p.at(lexer.EOF) {
-		elt, err := p.parseExpr()
+	// Empty list.
+	if p.at(lexer.RBRACKET) {
+		p.advance()
+		return ast.NewList(nil, ast.Load, pos), nil
+	}
+
+	first, err := p.parseExpr()
+	if err != nil {
+		return nil, err
+	}
+
+	// List comprehension: the first element is followed by a 'for' clause.
+	if p.at(lexer.FOR) || p.atAsyncFor() {
+		generators, err := p.parseComprehensionClauses()
 		if err != nil {
 			return nil, err
 		}
-		elts = append(elts, elt)
-		if !p.match(lexer.COMMA) {
-			break
+		if _, err := p.expect(lexer.RBRACKET); err != nil {
+			return nil, err
+		}
+		return ast.NewListComp(first, generators, pos), nil
+	}
+
+	// Plain list display.
+	elts := []ast.Expr{first}
+	if p.match(lexer.COMMA) {
+		for !p.at(lexer.RBRACKET) && !p.at(lexer.EOF) {
+			elt, err := p.parseExpr()
+			if err != nil {
+				return nil, err
+			}
+			elts = append(elts, elt)
+			if !p.match(lexer.COMMA) {
+				break
+			}
 		}
 	}
 	if _, err := p.expect(lexer.RBRACKET); err != nil {
 		return nil, err
 	}
 	return ast.NewList(elts, ast.Load, pos), nil
+}
+
+// atAsyncFor reports whether the parser is positioned at an 'async for' clause.
+func (p *parser) atAsyncFor() bool {
+	return p.at(lexer.ASYNC) && p.peek().Type == lexer.FOR
+}
+
+// parseComprehensionClauses parses one or more for/if clauses that follow the
+// element of a comprehension or generator expression:
+//
+//	for target in iter [if cond ...] [for target in iter ...]
+//
+// The parser must be positioned at the first 'for' (or 'async for').
+func (p *parser) parseComprehensionClauses() ([]*ast.Comprehension, error) {
+	var generators []*ast.Comprehension
+	for p.at(lexer.FOR) || p.atAsyncFor() {
+		isAsync := false
+		if p.at(lexer.ASYNC) {
+			isAsync = true
+			p.advance() // consume 'async'
+		}
+		p.advance() // consume 'for'
+
+		target, err := p.parseTargetList()
+		if err != nil {
+			return nil, err
+		}
+		if _, err := p.expect(lexer.IN); err != nil {
+			return nil, err
+		}
+		// The iterable and filter conditions are or-expressions in the Python
+		// grammar (not full conditional expressions), so a trailing ternary
+		// would need parentheses and cannot swallow following for/if clauses.
+		iter, err := p.parseOrExpr()
+		if err != nil {
+			return nil, err
+		}
+
+		var ifs []ast.Expr
+		for p.at(lexer.IF) {
+			p.advance() // consume 'if'
+			cond, err := p.parseOrExpr()
+			if err != nil {
+				return nil, err
+			}
+			ifs = append(ifs, cond)
+		}
+
+		generators = append(generators, ast.NewComprehension(target, iter, ifs, isAsync))
+	}
+	return generators, nil
 }
 
 // parseDictOrSet parses {k: v, ...} or {elem, ...}
@@ -1875,19 +1965,41 @@ func (p *parser) parseDictOrSet() (ast.Expr, error) {
 
 	// Dict: first element followed by ':'
 	if p.match(lexer.COLON) {
-		return p.parseDictRest(first, pos)
+		val, err := p.parseExpr()
+		if err != nil {
+			return nil, err
+		}
+		// Dict comprehension: {key: value for target in iter ...}
+		if p.at(lexer.FOR) || p.atAsyncFor() {
+			generators, err := p.parseComprehensionClauses()
+			if err != nil {
+				return nil, err
+			}
+			if _, err := p.expect(lexer.RBRACE); err != nil {
+				return nil, err
+			}
+			return ast.NewDictComp(first, val, generators, pos), nil
+		}
+		return p.parseDictRest(first, val, pos)
 	}
 
-	// Set: first element followed by ',' or '}'
+	// Set comprehension: {elt for target in iter ...}
+	if p.at(lexer.FOR) || p.atAsyncFor() {
+		generators, err := p.parseComprehensionClauses()
+		if err != nil {
+			return nil, err
+		}
+		if _, err := p.expect(lexer.RBRACE); err != nil {
+			return nil, err
+		}
+		return ast.NewSetComp(first, generators, pos), nil
+	}
+
+	// Plain set: first element followed by ',' or '}'
 	return p.parseSetRest(first, pos)
 }
 
-func (p *parser) parseDictRest(firstKey ast.Expr, pos ast.Position) (ast.Expr, error) {
-	firstVal, err := p.parseExpr()
-	if err != nil {
-		return nil, err
-	}
-
+func (p *parser) parseDictRest(firstKey, firstVal ast.Expr, pos ast.Position) (ast.Expr, error) {
 	keys := []ast.Expr{firstKey}
 	values := []ast.Expr{firstVal}
 

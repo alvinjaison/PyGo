@@ -577,6 +577,39 @@ func (v *VM) execute(f *Frame, instr bytecode.Instruction) (object.Object, error
 		// TODO(Phase 2): Implement SetObject and BUILD_SET.
 		return nil, fmt.Errorf("set literals not yet implemented")
 
+	// ---- Comprehension accumulators ----
+
+	case bytecode.LIST_APPEND:
+		// Append TOS to the list `arg` slots below (after the value is popped).
+		value := f.Pop()
+		target := f.PeekN(int(instr.Arg) - 1)
+		lst, ok := target.(*object.ListObject)
+		if !ok {
+			return nil, object.NewTypeError(
+				"LIST_APPEND expected list, got '%s'", target.Type().Name())
+		}
+		lst.Append(value)
+
+	case bytecode.MAP_ADD:
+		// stack[-arg][key] = value, where value is TOS and key is TOS1.
+		// This matches CPython 3.8+ ordering (key pushed before value).
+		value := f.Pop()
+		key := f.Pop()
+		target := f.PeekN(int(instr.Arg) - 1)
+		d, ok := target.(*object.DictObject)
+		if !ok {
+			return nil, object.NewTypeError(
+				"MAP_ADD expected dict, got '%s'", target.Type().Name())
+		}
+		if err := d.SetItem(key, value); err != nil {
+			return nil, err
+		}
+
+	case bytecode.SET_ADD:
+		// Sets are not yet implemented; set comprehensions are rejected at
+		// compile time, so this should be unreachable.
+		return nil, fmt.Errorf("set comprehensions not yet implemented")
+
 	case bytecode.BUILD_SLICE:
 		argc := int(instr.Arg)
 		var step object.Object = object.None
@@ -1252,8 +1285,8 @@ func constantToObject(c interface{}) object.Object {
 type codeConstant struct{ code *bytecode.Code }
 
 func (c *codeConstant) Type() *object.TypeObject { return object.ObjectType }
-func (c *codeConstant) String() string            { return fmt.Sprintf("<code object %s>", c.code.Name) }
-func (c *codeConstant) Repr() string              { return c.String() }
+func (c *codeConstant) String() string           { return fmt.Sprintf("<code object %s>", c.code.Name) }
+func (c *codeConstant) Repr() string             { return c.String() }
 
 // cellName returns the name of a cell variable by its index.
 func cellName(f *Frame, idx int) string {

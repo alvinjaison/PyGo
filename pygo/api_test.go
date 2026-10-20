@@ -1,7 +1,10 @@
 package pygo_test
 
 import (
+	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/pygo/pygo/pygo"
 )
@@ -183,5 +186,46 @@ func TestPublicGoFuncBytes(t *testing.T) {
 	b, _ := v.Bytes()
 	if string(b) != "cba" {
 		t.Errorf("got %q want cba", string(b))
+	}
+}
+
+func TestPublicMaxInstructions(t *testing.T) {
+	rt := pygo.New(pygo.WithMaxInstructions(10000))
+	err := rt.RunString("while True:\n    pass\n")
+	if err == nil {
+		t.Fatal("expected a resource limit error")
+	}
+	if !pygo.IsError(err, "ResourceLimitError") {
+		t.Errorf("expected ResourceLimitError, got: %v", err)
+	}
+}
+
+func TestPublicExecutionTimeout(t *testing.T) {
+	rt := pygo.New(pygo.WithExecutionTimeout(50 * time.Millisecond))
+	err := rt.RunString("while True:\n    pass\n")
+	if err == nil {
+		t.Fatal("expected a timeout error")
+	}
+}
+
+func TestPublicContextCancellation(t *testing.T) {
+	rt := pygo.New()
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
+	defer cancel()
+	err := rt.RunStringContext(ctx, "while True:\n    pass\n")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("expected DeadlineExceeded, got: %v", err)
+	}
+}
+
+func TestPublicLimitAllowsNormal(t *testing.T) {
+	rt := pygo.New(pygo.WithMaxInstructions(1000000))
+	v, err := rt.Eval("sum(range(100))")
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, _ := v.Int()
+	if n != 4950 {
+		t.Errorf("got %d want 4950", n)
 	}
 }

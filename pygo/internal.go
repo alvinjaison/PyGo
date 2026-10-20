@@ -19,6 +19,7 @@ type runtimeConfig struct {
 	restricted      bool
 	timeout         time.Duration
 	maxInstructions int64
+	maxMemory       int64
 }
 
 func defaultConfig() *runtimeConfig {
@@ -36,10 +37,12 @@ type internalRuntime struct {
 
 func newInternalRuntime(cfg *runtimeConfig) *internalRuntime {
 	rt := runtime.New(runtime.Config{
-		Stdlib:       cfg.stdlib,
-		SearchPath:   cfg.searchPath,
-		MaxCallDepth: cfg.maxCallDepth,
-		Restricted:   cfg.restricted,
+		Stdlib:          cfg.stdlib,
+		SearchPath:      cfg.searchPath,
+		MaxCallDepth:    cfg.maxCallDepth,
+		MaxInstructions: cfg.maxInstructions,
+		MaxMemory:       cfg.maxMemory,
+		Restricted:      cfg.restricted,
 	})
 	return &internalRuntime{cfg: cfg, rt: rt}
 }

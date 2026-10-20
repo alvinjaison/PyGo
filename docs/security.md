@@ -145,15 +145,19 @@ Recursion is bounded by the `WithMaxCallDepth` option (default: 500). Exceeding 
 
 This is enforced by the VM's frame creation logic. It prevents stack overflow from translating into a Go goroutine stack overflow.
 
-### Instruction count limit (Phase 2+)
+### Instruction count limit (implemented)
 
 ```go
 rt := pygo.New(pygo.WithMaxInstructions(1_000_000))
 ```
 
-The VM counts executed instructions. When the limit is exceeded, a `RuntimeError` is raised. This is the primary defense against infinite loops in untrusted code.
+The VM counts executed instructions. When the limit is exceeded, execution is
+aborted with an **uncatchable** error (`*vm.LimitError`, surfaced as
+`ResourceLimitError` at the public API). The abort bypasses Python `except`
+handlers and `with`-statement `__exit__`, so untrusted code cannot swallow it.
+This is the primary defense against infinite loops in untrusted code.
 
-### Memory limit (Phase 4+, best-effort)
+### Memory limit (implemented, best-effort)
 
 ```go
 rt := pygo.New(pygo.WithMaxMemory(64 * 1024 * 1024)) // 64 MB
@@ -176,7 +180,11 @@ The VM checks `ctx.Done()` at:
 - Function call sites
 - `yield` points (generators)
 
-When the context is cancelled, a `KeyboardInterrupt`-equivalent exception is raised in Python. Python code can catch `KeyboardInterrupt`. If it does not re-raise it or if it handles it without ending execution, the VM will not be stopped by the context alone.
+When the context is cancelled or its deadline passes, execution is aborted with
+an **uncatchable** abort: the underlying `context.Canceled` /
+`context.DeadlineExceeded` error is returned to the Go caller and cannot be
+intercepted by Python `except` handlers or suppressed by a `with`-statement.
+This guarantees a host can stop a runaway or untrusted script.
 
 **Design consideration:** Whether `KeyboardInterrupt` should be catchable in restricted mode is a policy decision. For maximum safety, restricted mode should treat a cancelled context as a forced termination that bypasses Python exception handling. This requires a VM-level "abort" flag separate from the Python exception mechanism. This is a Phase 4+ hardening.
 

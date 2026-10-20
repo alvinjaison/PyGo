@@ -61,6 +61,7 @@ func (r *Runtime) installBuiltins() {
 		object.TypeAssertionError, object.TypeNotImplementedError, object.TypeOverflowError,
 		object.TypeOSError, object.TypeImportError, object.TypeModuleNotFoundError,
 		object.TypeKeyboardInterrupt, object.TypeSystemExit, object.TypeUnboundLocalError,
+		object.TypeRecursionError,
 		object.ExceptionType, object.BaseExceptionType,
 	} {
 		_ = r.builtins.SetItem(object.StrFrom(t.Name()), t)

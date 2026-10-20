@@ -27,11 +27,25 @@ type VM struct {
 	// depth is the current call stack depth.
 	depth int
 
-	// instrCount counts executed instructions (for limits, Phase 2+).
+	// instrCount counts executed instructions across this VM's lifetime.
 	instrCount int64
 
-	// maxInstr is the instruction execution limit (0 = unlimited).
+	// maxInstr is the instruction execution limit (0 = unlimited). Exceeding it
+	// triggers a hard, non-catchable abort.
 	maxInstr int64
+
+	// maxMemory is a best-effort limit on Go heap bytes (0 = unlimited),
+	// checked periodically. Exceeding it triggers a hard abort.
+	maxMemory int64
+
+	// memCheckEvery controls how often (in instructions) the memory limit is
+	// polled, since reading memory stats is relatively expensive.
+	memCheckEvery int64
+
+	// aborted holds a hard-abort condition (limit exceeded or cancellation)
+	// that must not be caught by Python `except` handlers. Once set, the VM
+	// stops at the next step and propagates it unconditionally.
+	aborted *abortError
 
 	// importer resolves modules for IMPORT_NAME / IMPORT_FROM. It is optional;
 	// when nil, import statements raise ImportError.
@@ -99,16 +113,30 @@ type Importer interface {
 // SetImporter installs the module importer used by import statements.
 func (v *VM) SetImporter(im Importer) { v.importer = im }
 
-// New creates a new VM with the given options.
-func New(ctx context.Context, maxDepth int) *VM {
+// Limits configures the VM's execution resource caps.
+type Limits struct {
+	MaxCallDepth    int   // maximum call stack depth (0 → default 500)
+	MaxInstructions int64 // bytecode instructions per run (0 → unlimited)
+	MaxMemory       int64 // best-effort Go heap byte limit (0 → unlimited)
+}
+
+// New creates a new VM with the given context and resource limits.
+func New(ctx context.Context, limits Limits) *VM {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	maxDepth := limits.MaxCallDepth
 	if maxDepth <= 0 {
 		maxDepth = 500
 	}
 	installFrameContextHook()
-	return &VM{ctx: ctx, maxDepth: maxDepth}
+	return &VM{
+		ctx:           ctx,
+		maxDepth:      maxDepth,
+		maxInstr:      limits.MaxInstructions,
+		maxMemory:     limits.MaxMemory,
+		memCheckEvery: 4096,
+	}
 }
 
 // activeVMs is a stack of VMs currently executing a frame. The topmost entry
@@ -175,12 +203,12 @@ func (v *VM) Run(frame *Frame) (result object.Object, err error) {
 	}
 
 	for {
-		// Cancellation check (at every instruction for simplicity in Phase 1;
-		// optimize to backedges-only in Phase 2).
-		select {
-		case <-v.ctx.Done():
-			return nil, v.ctx.Err()
-		default:
+		v.instrCount++
+
+		// Hard limits and cancellation: a non-catchable abort that unwinds
+		// straight out of the VM, bypassing Python exception handlers.
+		if a := v.checkAbort(); a != nil {
+			return nil, abortToError(a)
 		}
 
 		if frame.PC >= len(frame.Code.Instructions) {
@@ -190,17 +218,16 @@ func (v *VM) Run(frame *Frame) (result object.Object, err error) {
 
 		instr := frame.Code.Instructions[frame.PC]
 		frame.PC++
-		v.instrCount++
-
-		if v.maxInstr > 0 && v.instrCount > v.maxInstr {
-			exc := object.NewRuntimeError("instruction limit exceeded")
-			return nil, exc
-		}
 
 		var stepErr error
 		result, stepErr = v.execute(frame, instr)
 
 		if stepErr != nil {
+			// A hard abort (limit/cancellation), possibly surfaced by a nested
+			// call, propagates without unwinding Python handlers.
+			if isAbort(stepErr) || v.aborted != nil {
+				return nil, stepErr
+			}
 			// stepErr is a Python exception wrapped as a Go error.
 			exc, isExc := stepErr.(*object.ExceptionObject)
 			if !isExc {
@@ -256,10 +283,10 @@ func (v *VM) runFrame(frame *Frame) (value object.Object, yielded bool, err erro
 	}
 
 	for {
-		select {
-		case <-v.ctx.Done():
-			return nil, false, v.ctx.Err()
-		default:
+		v.instrCount++
+
+		if a := v.checkAbort(); a != nil {
+			return nil, false, abortToError(a)
 		}
 
 		if frame.PC >= len(frame.Code.Instructions) {
@@ -268,13 +295,12 @@ func (v *VM) runFrame(frame *Frame) (value object.Object, yielded bool, err erro
 
 		instr := frame.Code.Instructions[frame.PC]
 		frame.PC++
-		v.instrCount++
-		if v.maxInstr > 0 && v.instrCount > v.maxInstr {
-			return nil, false, object.NewRuntimeError("instruction limit exceeded")
-		}
 
 		result, stepErr := v.execute(frame, instr)
 		if stepErr != nil {
+			if isAbort(stepErr) || v.aborted != nil {
+				return nil, false, stepErr
+			}
 			exc, isExc := stepErr.(*object.ExceptionObject)
 			if !isExc {
 				exc = object.NewRuntimeError(stepErr.Error())

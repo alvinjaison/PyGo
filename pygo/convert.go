@@ -1,11 +1,14 @@
 package pygo
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"reflect"
 
 	"github.com/pygo/pygo/internal/object"
+	"github.com/pygo/pygo/internal/vm"
 )
 
 // toPublicError converts an internal error (possibly an *object.ExceptionObject)
@@ -29,6 +32,16 @@ func toPublicError(err error) error {
 			}
 		}
 		return pe
+	}
+	// Cancellation / deadline: pass the context error through unchanged so
+	// callers can test it with errors.Is(err, context.Canceled) etc.
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	// Resource-limit aborts surface as a dedicated error type.
+	var le *vm.LimitError
+	if errors.As(err, &le) {
+		return &Error{Type: "ResourceLimitError", Message: le.Message}
 	}
 	// Parser/compiler syntax errors and others become SyntaxError-ish values.
 	return &Error{Type: "SyntaxError", Message: err.Error()}

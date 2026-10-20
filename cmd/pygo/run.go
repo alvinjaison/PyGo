@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -72,7 +73,21 @@ func buildContext(cfg *config) context.Context {
 // handleError prints a Python traceback or error to stderr and returns the
 // appropriate exit code.
 func handleError(err error) int {
+	// Timeout / cancellation: report a clear message.
+	if errors.Is(err, context.DeadlineExceeded) {
+		fmt.Fprintln(os.Stderr, "pygo: execution time limit exceeded")
+		return 1
+	}
+	if errors.Is(err, context.Canceled) {
+		fmt.Fprintln(os.Stderr, "pygo: execution cancelled")
+		return 1
+	}
 	if pyErr := pygo.AsError(err); pyErr != nil {
+		// Resource-limit aborts are not Python exceptions; report plainly.
+		if pyErr.Type == "ResourceLimitError" {
+			fmt.Fprintf(os.Stderr, "pygo: %s\n", pyErr.Message)
+			return 1
+		}
 		// Python exception: print CPython-style traceback.
 		fmt.Fprint(os.Stderr, pyErr.Format())
 		// SystemExit: use its exit code.

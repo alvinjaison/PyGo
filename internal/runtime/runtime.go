@@ -21,12 +21,14 @@ import (
 
 // Config configures a Runtime.
 type Config struct {
-	Stdlib       bool
-	SearchPath   []string
-	MaxCallDepth int
-	Restricted   bool
-	Stdout       io.Writer
-	Stderr       io.Writer
+	Stdlib          bool
+	SearchPath      []string
+	MaxCallDepth    int
+	MaxInstructions int64
+	MaxMemory       int64
+	Restricted      bool
+	Stdout          io.Writer
+	Stderr          io.Writer
 }
 
 // Runtime is a single Python execution context.
@@ -75,9 +77,13 @@ func New(cfg Config) *Runtime {
 	return r
 }
 
-// newVM constructs a VM wired with this runtime's importer.
+// newVM constructs a VM wired with this runtime's importer and resource limits.
 func (r *Runtime) newVM(ctx context.Context) *vm.VM {
-	machine := vm.New(ctx, r.cfg.MaxCallDepth)
+	machine := vm.New(ctx, vm.Limits{
+		MaxCallDepth:    r.cfg.MaxCallDepth,
+		MaxInstructions: r.cfg.MaxInstructions,
+		MaxMemory:       r.cfg.MaxMemory,
+	})
 	if r.importer != nil {
 		machine.SetImporter(importerAdapter{r.importer})
 	}

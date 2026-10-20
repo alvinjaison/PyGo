@@ -267,3 +267,11 @@ func WithExecutionTimeout(d time.Duration) Option {
 func WithMaxInstructions(n int64) Option {
 	return func(c *runtimeConfig) { c.maxInstructions = n }
 }
+
+// WithMaxMemory sets a best-effort limit, in bytes, on the Go heap while
+// Python code runs. When the live heap exceeds this limit (checked
+// periodically), execution is aborted with an uncatchable error.
+// Default: 0 (unlimited).
+func WithMaxMemory(bytes int64) Option {
+	return func(c *runtimeConfig) { c.maxMemory = bytes }
+}

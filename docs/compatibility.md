@@ -63,6 +63,11 @@ test suite:
 - **Embedding:** `RunString`/`Eval`/`Set`/`Get`, `RegisterFunction`/`Register`
   (structs, methods, Go error → Python exception), `CallByName`.
 - **CLI:** `pygo script.py`, `pygo -c`, and an interactive REPL.
+- **Execution limits (hardening):** instruction-count cap, memory cap
+  (best-effort), recursion-depth cap, and `context`-based timeout/cancellation.
+  Instruction/memory limits and cancellation are hard, uncatchable aborts that
+  bypass `except` and `with`-`__exit__`; `RecursionError` remains a normal
+  catchable exception.
 
 - **Context managers:** exception-safe `with` (single and multiple managers)
   that runs `__enter__`/`__exit__`, propagates or suppresses exceptions based

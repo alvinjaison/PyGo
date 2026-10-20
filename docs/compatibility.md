@@ -47,11 +47,11 @@ test suite:
 - **Imports / stdlib:** `import`, `from … import`, `import … as`, module
   caching, user `.py` modules on the search path, host-registered modules, and
   the `math`, `json`, `re`, `random`, `sys`, `string`, `functools`,
-  `itertools`, `os` (+`os.path`), `time`, and `collections` (Counter,
-  defaultdict, OrderedDict, deque, namedtuple) built-in modules. (`re` is
-  backed by Go's RE2 engine, so backreferences and lookaround in patterns are
-  not supported. `os` is OS-capable and is blocked in restricted-mode
-  runtimes.)
+  `itertools`, `os` (+`os.path`), `time`, `collections` (Counter, defaultdict,
+  OrderedDict, deque, namedtuple), and `datetime` (date, datetime, timedelta)
+  built-in modules. (`re` is backed by Go's RE2 engine, so backreferences and
+  lookaround in patterns are not supported. `os` is OS-capable and is blocked
+  in restricted-mode runtimes.)
 - **List methods:** append, extend, insert, pop, remove, index, count, sort,
   reverse, clear, copy.
 - **Embedding:** `RunString`/`Eval`/`Set`/`Get`, `RegisterFunction`/`Register`
@@ -454,7 +454,7 @@ This document categorizes every significant Python 3 language and runtime featur
 | `json` | Post-MVP | Go (wraps `encoding/json`) |
 | `re` (subset) | **Implemented** | Go (wraps `regexp`/RE2) — no backrefs/lookaround |
 | `time` (subset) | **Implemented** | Go (time/time_ns/monotonic/perf_counter/sleep/strftime) |
-| `datetime` | Future | Go |
+| `datetime` | **Implemented** | Go (date, datetime, timedelta; arithmetic + comparison) |
 | `io` (subset) | Future | Go |
 | `sys` (full) | Future | Go |
 | `collections` (Counter, defaultdict, OrderedDict, deque, namedtuple) | **Implemented** | Go |

@@ -25,6 +25,7 @@ var registry = map[string]Builder{
 	"os":          buildOS,
 	"time":        buildTime,
 	"collections": buildCollections,
+	"datetime":    buildDatetime,
 }
 
 // osCapable lists modules that interact with the host OS (filesystem,

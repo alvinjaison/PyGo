@@ -1,0 +1,22 @@
+# Kiro / editor
+.kiro/
+.vscode/
+.idea/
+*.swp
+
+# Build output
+/pygo
+/dist/
+*.exe
+*.out
+
+# Go
+*.test
+coverage.out
+*.prof
+
+# OS
+.DS_Store
+
+# REPL history
+.pygo_history

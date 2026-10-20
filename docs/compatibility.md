@@ -34,8 +34,9 @@ test suite:
   `float`, `bool`, `list`, `tuple`, `type`, `isinstance`, `chr`, `ord`.
 - **Imports / stdlib:** `import`, `from … import`, `import … as`, module
   caching, user `.py` modules on the search path, host-registered modules, and
-  the `math`, `json`, `random`, `sys`, `string`, `functools`, `itertools`
-  built-in modules.
+  the `math`, `json`, `re`, `random`, `sys`, `string`, `functools`,
+  `itertools` built-in modules. (`re` is backed by Go's RE2 engine, so
+  backreferences and lookaround in patterns are not supported.)
 - **Embedding:** `RunString`/`Eval`/`Set`/`Get`, `RegisterFunction`/`Register`
   (structs, methods, Go error → Python exception), `CallByName`.
 - **CLI:** `pygo script.py`, `pygo -c`, and an interactive REPL.
@@ -432,7 +433,7 @@ This document categorizes every significant Python 3 language and runtime featur
 | `os.path` | Future | Go |
 | `pathlib` | Future | Go |
 | `json` | Post-MVP | Go (wraps `encoding/json`) |
-| `re` (subset) | Future | Go (wraps `regexp`) — syntax differences apply |
+| `re` (subset) | **Implemented** | Go (wraps `regexp`/RE2) — no backrefs/lookaround |
 | `time` (subset) | Future | Go |
 | `datetime` | Future | Go |
 | `io` (subset) | Future | Go |

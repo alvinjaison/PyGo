@@ -14,13 +14,14 @@ type Builder func(name string) *object.ModuleObject
 
 // registry maps module names to their Go builders.
 var registry = map[string]Builder{
-	"math":       buildMath,
-	"json":       buildJSON,
-	"random":     buildRandom,
-	"sys":        buildSys,
-	"string":     buildString,
-	"functools":  buildFunctools,
-	"itertools":  buildItertools,
+	"math":      buildMath,
+	"json":      buildJSON,
+	"re":        buildRe,
+	"random":    buildRandom,
+	"sys":       buildSys,
+	"string":    buildString,
+	"functools": buildFunctools,
+	"itertools": buildItertools,
 }
 
 // Names returns the list of available built-in module names.
@@ -81,6 +82,15 @@ func argFloat(args []object.Object, i int) (float64, error) {
 		return 0, nil
 	}
 	return 0, object.NewTypeError("expected a number, got '%s'", args[i].Type().Name())
+}
+
+// strListToObject converts a slice of Go strings into a Python list.
+func strListToObject(parts []string) object.Object {
+	items := make([]object.Object, len(parts))
+	for i, p := range parts {
+		items[i] = object.StrFrom(p)
+	}
+	return object.NewList(items)
 }
 
 // argInt coerces the i-th argument to an int64.

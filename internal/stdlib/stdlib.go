@@ -20,10 +20,11 @@ var registry = map[string]Builder{
 	"random":    buildRandom,
 	"sys":       buildSys,
 	"string":    buildString,
-	"functools": buildFunctools,
-	"itertools": buildItertools,
-	"os":        buildOS,
-	"time":      buildTime,
+	"functools":   buildFunctools,
+	"itertools":   buildItertools,
+	"os":          buildOS,
+	"time":        buildTime,
+	"collections": buildCollections,
 }
 
 // osCapable lists modules that interact with the host OS (filesystem,

@@ -345,7 +345,7 @@ func (v *VM) execute(f *Frame, instr bytecode.Instruction) (object.Object, error
 	case bytecode.BINARY_SUBSCR:
 		key := f.Pop()
 		container := f.Pop()
-		if s, ok := container.(object.Subscriptable); ok {
+		if s, ok := container.(object.GetItemer); ok {
 			val, err := s.GetItem(key)
 			if err != nil {
 				return nil, err

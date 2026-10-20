@@ -67,6 +67,13 @@ type LenProvider interface {
 	Len() int
 }
 
+// GetItemer supports read-only subscript access obj[key]. Immutable sequences
+// (tuple, namedtuple, str) implement this without the write methods.
+type GetItemer interface {
+	Object
+	GetItem(key Object) (Object, error)
+}
+
 // Subscriptable supports obj[key], obj[key] = v, del obj[key].
 type Subscriptable interface {
 	Object

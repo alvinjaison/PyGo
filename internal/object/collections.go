@@ -22,6 +22,23 @@ func (l *ListObject) Len() int          { return len(l.Items) }
 func (l *ListObject) IsTrue() (bool, error) { return len(l.Items) > 0, nil }
 
 func (l *ListObject) GetItem(key Object) (Object, error) {
+	if sl, ok := key.(*SliceObject); ok {
+		start, stop, step, err := sl.Resolve(len(l.Items))
+		if err != nil {
+			return nil, err
+		}
+		var out []Object
+		if step > 0 {
+			for i := start; i < stop; i += step {
+				out = append(out, l.Items[i])
+			}
+		} else {
+			for i := start; i > stop; i += step {
+				out = append(out, l.Items[i])
+			}
+		}
+		return NewList(out), nil
+	}
 	idx, err := resolveIndex(key, len(l.Items))
 	if err != nil {
 		return nil, err

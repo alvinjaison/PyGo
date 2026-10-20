@@ -102,3 +102,46 @@ var debugPanics = false
 
 // SetDebugPanics enables or disables panic propagation (test helper).
 func SetDebugPanics(v bool) { debugPanics = v }
+
+// makeGenerator wraps a suspended frame as a GeneratorObject. Each call to the
+// generator's Next() resumes the frame via runFrame until the next yield or
+// the frame returns.
+func (v *VM) makeGenerator(name string, frame *Frame) *object.GeneratorObject {
+	done := false
+	return object.NewGenerator(name, func() (object.Object, bool, error) {
+		if done {
+			return nil, false, nil
+		}
+		val, yielded, err := v.runFrame(frame)
+		if err != nil {
+			done = true
+			return nil, false, err
+		}
+		if yielded {
+			return val, true, nil
+		}
+		// Frame returned (or fell off the end): generator is exhausted.
+		done = true
+		return nil, false, nil
+	})
+}
+
+// findSetBelow returns the nearest SetObject on the stack (for SET_ADD).
+func (f *Frame) findSetBelow() *object.SetObject {
+	for i := f.StackTop - 1; i >= 0; i-- {
+		if s, ok := f.Stack[i].(*object.SetObject); ok {
+			return s
+		}
+	}
+	return nil
+}
+
+// findDictBelow returns the nearest DictObject on the stack (for MAP_ADD).
+func (f *Frame) findDictBelow() *object.DictObject {
+	for i := f.StackTop - 1; i >= 0; i-- {
+		if d, ok := f.Stack[i].(*object.DictObject); ok {
+			return d
+		}
+	}
+	return nil
+}

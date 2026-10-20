@@ -148,7 +148,7 @@ func (s *SliceObject) Resolve(length int) (start, stop, step int, err error) {
 	if step > 0 {
 		start, stop = 0, length
 	} else {
-		start, stop = length-1, -length-1
+		start, stop = length-1, -1 // -1 means "before index 0"
 	}
 
 	if !IsNone(s.Start) {

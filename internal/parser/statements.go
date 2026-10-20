@@ -102,14 +102,15 @@ func (p *Parser) parseBlock() []ast.Stmt {
 // assignment, or a bare expression statement.
 func (p *Parser) parseSimpleStatement() ast.Stmt {
 	pos := p.pos()
-	first := p.parseExpr()
+	first := p.parseExprListNoTrailing()
 
 	switch {
 	case p.check(lexer.EQUAL):
-		// Assignment (possibly chained: a = b = value)
+		// Assignment (possibly chained: a = b = value). Each side may be a
+		// bare tuple (a, b = 1, 2).
 		targets := []ast.Expr{first}
 		for p.accept(lexer.EQUAL) {
-			next := p.parseExpr()
+			next := p.parseExprListNoTrailing()
 			targets = append(targets, next)
 		}
 		value := targets[len(targets)-1]

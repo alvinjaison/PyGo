@@ -275,36 +275,111 @@ func (l *Lexer) emitEOF() Token {
 // scanString scans a string literal (all flavors: raw, bytes, f-string,
 // single/double quoted, triple-quoted).
 func (l *Lexer) scanString() Token {
-	// TODO(Phase 1): Implement full string literal scanning including:
-	//   - All prefix combinations (r, b, f, rb, br, fr, rf)
-	//   - Single and double quotes
-	//   - Triple-quoted strings (multi-line)
-	//   - Escape sequences
-	//   - f-string expression detection (Phase 2)
-	//
-	// Placeholder: scan a simple single/double-quoted string.
 	startLine, startCol := l.line, l.col
-	_ = startLine
-	_ = startCol
 
-	var sb strings.Builder
-	quote := l.src[l.pos]
-	l.advance()
-
-	for l.pos < len(l.src) && l.src[l.pos] != quote {
-		if l.src[l.pos] == '\\' && l.pos+1 < len(l.src) {
-			l.advance()
-			sb.WriteRune(l.src[l.pos])
-		} else {
-			sb.WriteRune(l.src[l.pos])
-		}
+	// Read the optional prefix (letters before the quote): r, b, f, u and
+	// two-letter combinations.
+	var prefix strings.Builder
+	for l.pos < len(l.src) && l.src[l.pos] != '"' && l.src[l.pos] != '\'' {
+		prefix.WriteRune(unicode.ToLower(l.src[l.pos]))
 		l.advance()
 	}
-	if l.pos < len(l.src) {
-		l.advance() // closing quote
+	pfx := prefix.String()
+	raw := strings.Contains(pfx, "r")
+	isBytes := strings.Contains(pfx, "b")
+
+	quote := l.src[l.pos]
+
+	// Detect triple-quoted strings.
+	triple := false
+	if l.pos+2 < len(l.src) && l.src[l.pos+1] == quote && l.src[l.pos+2] == quote {
+		triple = true
+		l.advance()
+		l.advance()
+		l.advance()
+	} else {
+		l.advance()
 	}
 
-	return l.makeToken(STRING, sb.String())
+	var sb strings.Builder
+	for l.pos < len(l.src) {
+		ch := l.src[l.pos]
+
+		// Closing delimiter?
+		if ch == quote {
+			if !triple {
+				l.advance()
+				break
+			}
+			if l.pos+2 < len(l.src) && l.src[l.pos+1] == quote && l.src[l.pos+2] == quote {
+				l.advance()
+				l.advance()
+				l.advance()
+				break
+			}
+		}
+
+		// Escape sequences (unless a raw string).
+		if ch == '\\' && !raw && l.pos+1 < len(l.src) {
+			l.advance()
+			sb.WriteString(decodeEscape(l.src[l.pos]))
+			l.advance()
+			continue
+		}
+
+		// A non-triple string must not contain a bare newline.
+		if ch == '\n' && !triple {
+			l.addError("EOL while scanning string literal")
+			break
+		}
+
+		sb.WriteRune(ch)
+		l.advance()
+	}
+
+	tt := STRING
+	if isBytes {
+		tt = BYTES
+	}
+	tok := Token{
+		Type:      tt,
+		Value:     sb.String(),
+		Line:      startLine,
+		Col:       startCol,
+		StrPrefix: pfx,
+	}
+	return tok
+}
+
+// decodeEscape returns the replacement string for a backslash escape.
+func decodeEscape(c rune) string {
+	switch c {
+	case 'n':
+		return "\n"
+	case 't':
+		return "\t"
+	case 'r':
+		return "\r"
+	case '\\':
+		return "\\"
+	case '\'':
+		return "'"
+	case '"':
+		return "\""
+	case '0':
+		return "\x00"
+	case 'a':
+		return "\a"
+	case 'b':
+		return "\b"
+	case 'f':
+		return "\f"
+	case 'v':
+		return "\v"
+	case '\n':
+		return "" // line continuation inside a string
+	}
+	return "\\" + string(c)
 }
 
 // scanNumber scans an integer or float literal.

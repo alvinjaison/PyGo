@@ -131,11 +131,25 @@ const (
 // Token is a single lexical element of Python source.
 type Token struct {
 	Type    TokenType
-	Value   string // raw source text of the token
+	Value   string // decoded content for strings; raw text otherwise
 	Line    int    // 1-indexed source line
 	Col     int    // 1-indexed column of the first character
 	EndLine int    // 1-indexed line of the last character
 	EndCol  int    // 1-indexed column after the last character
+
+	// StrPrefix holds the lowercased string-literal prefix (e.g. "", "r",
+	// "b", "f", "rb"). Only meaningful when Type is STRING or BYTES.
+	StrPrefix string
+}
+
+// IsFString reports whether this STRING token was an f-string literal.
+func (t Token) IsFString() bool {
+	for _, c := range t.StrPrefix {
+		if c == 'f' {
+			return true
+		}
+	}
+	return false
 }
 
 // String returns a human-readable representation of the token, useful in

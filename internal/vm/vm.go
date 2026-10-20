@@ -118,9 +118,79 @@ func (v *VM) Run(frame *Frame) (result object.Object, err error) {
 			return nil, exc
 		}
 
-		// A non-nil result signals RETURN_VALUE was executed.
+		// A non-nil result signals RETURN_VALUE (or YIELD_VALUE) was executed.
 		if result != nil {
 			return result, nil
+		}
+	}
+}
+
+// runFrame advances a frame until it yields or returns. It is the core used by
+// both Run (for ordinary calls) and generator resumption.
+//
+// It returns:
+//   value   — the yielded or returned value
+//   yielded — true if execution stopped at a YIELD_VALUE (frame is suspended)
+//   err     — a Python exception or cancellation error
+func (v *VM) runFrame(frame *Frame) (value object.Object, yielded bool, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if debugPanics {
+				panic(r)
+			}
+			err = fmt.Errorf("internal VM error: %v", r)
+		}
+	}()
+
+	v.depth++
+	defer func() { v.depth-- }()
+	if v.depth > v.maxDepth {
+		return nil, false, object.NewException(object.TypeRecursionError,
+			fmt.Sprintf("maximum recursion depth exceeded (%d)", v.maxDepth))
+	}
+
+	for {
+		select {
+		case <-v.ctx.Done():
+			return nil, false, v.ctx.Err()
+		default:
+		}
+
+		if frame.PC >= len(frame.Code.Instructions) {
+			return object.None, false, nil
+		}
+
+		instr := frame.Code.Instructions[frame.PC]
+		frame.PC++
+		v.instrCount++
+		if v.maxInstr > 0 && v.instrCount > v.maxInstr {
+			return nil, false, object.NewRuntimeError("instruction limit exceeded")
+		}
+
+		result, stepErr := v.execute(frame, instr)
+		if stepErr != nil {
+			exc, isExc := stepErr.(*object.ExceptionObject)
+			if !isExc {
+				exc = object.NewRuntimeError(stepErr.Error())
+			}
+			if handler, found := frame.UnwindToHandler(); found {
+				frame.Push(exc)
+				frame.CurrentException = exc
+				frame.PC = handler.Handler
+				continue
+			}
+			if exc.Traceback == nil {
+				exc.Traceback = frame.Traceback()
+			}
+			return nil, false, exc
+		}
+
+		if result != nil {
+			if frame.Yielded {
+				frame.Yielded = false
+				return result, true, nil
+			}
+			return result, false, nil
 		}
 	}
 }
@@ -566,6 +636,28 @@ func (v *VM) execute(f *Frame, instr bytecode.Instruction) (object.Object, error
 		}
 		lst.Append(val)
 
+	case bytecode.SET_ADD:
+		val := f.Pop()
+		set := f.findSetBelow()
+		if set == nil {
+			return nil, object.NewRuntimeError("SET_ADD: no set on stack")
+		}
+		if err := set.Add(val); err != nil {
+			return nil, err
+		}
+
+	case bytecode.MAP_ADD:
+		// Dict comprehension pushes key then value; both are on top.
+		val := f.Pop()
+		key := f.Pop()
+		d := f.findDictBelow()
+		if d == nil {
+			return nil, object.NewRuntimeError("MAP_ADD: no dict on stack")
+		}
+		if err := d.SetItem(key, val); err != nil {
+			return nil, err
+		}
+
 	case bytecode.DUP_TOP_TWO:
 		a := f.PeekN(1)
 		b := f.PeekN(0)
@@ -739,9 +831,11 @@ func (v *VM) execute(f *Frame, instr bytecode.Instruction) (object.Object, error
 	// ---- Generator ----
 
 	case bytecode.YIELD_VALUE:
-		// Mark the frame as yielded and return the value.
-		// The VM caller (GeneratorObject.next()) handles resumption.
+		// Pop the value to yield and suspend the frame. On resume, the yield
+		// expression evaluates to None (the value from a bare next(); .send()
+		// is not yet supported), so push None for the resumed continuation.
 		val := f.Pop()
+		f.Push(object.None)
 		f.Yielded = true
 		return val, nil
 
@@ -782,6 +876,9 @@ func (v *VM) callObject(caller *Frame, callee object.Object, args []object.Objec
 		newFrame, err := buildFrame(fn, args, kwargs, caller)
 		if err != nil {
 			return nil, err
+		}
+		if fn.Code.IsGenerator() {
+			return v.makeGenerator(fn.Name, newFrame), nil
 		}
 		return v.Run(newFrame)
 

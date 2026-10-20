@@ -46,6 +46,25 @@ func (p *Parser) parseExprList() ast.Expr {
 	return ast.SetPos(&ast.Tuple{Elts: elts, Ctx: ast.Load}, pos)
 }
 
+// parseExprListNoTrailing parses a comma-separated expression list used on the
+// left of an assignment or as an expression statement. It returns a Tuple if
+// commas are present (supporting `a, b = ...` unpacking and `a, b` tuples).
+func (p *Parser) parseExprListNoTrailing() ast.Expr {
+	pos := p.pos()
+	first := p.parseExpr()
+	if !p.check(lexer.COMMA) {
+		return first
+	}
+	elts := []ast.Expr{first}
+	for p.accept(lexer.COMMA) {
+		if p.isExprEnd() {
+			break
+		}
+		elts = append(elts, p.parseExpr())
+	}
+	return ast.SetPos(&ast.Tuple{Elts: elts, Ctx: ast.Load}, pos)
+}
+
 func (p *Parser) isExprEnd() bool {
 	switch p.cur.Type {
 	case lexer.NEWLINE, lexer.EOF, lexer.SEMICOLON, lexer.RPAREN,
@@ -294,7 +313,14 @@ func (p *Parser) parseCall(fn ast.Expr) ast.Expr {
 			p.expect(lexer.EQUAL)
 			keywords = append(keywords, &ast.Keyword{Arg: kw, Value: p.parseExpr()})
 		default:
-			args = append(args, p.parseExpr())
+			argExpr := p.parseExpr()
+			// A bare generator expression as a sole argument: f(x for x in it)
+			if p.check(lexer.FOR) {
+				gpos := argExpr.Pos()
+				gens := p.parseComprehensionClauses()
+				argExpr = ast.SetPos(&ast.GeneratorExp{Elt: argExpr, Generators: gens}, gpos)
+			}
+			args = append(args, argExpr)
 		}
 		if !p.accept(lexer.COMMA) {
 			break
@@ -350,6 +376,11 @@ func (p *Parser) parseAtom() ast.Expr {
 		return ast.SetPos(&ast.Constant{Value: f}, pos)
 	case lexer.STRING:
 		return p.parseStringConcat()
+	case lexer.BYTES:
+		tok := p.advance()
+		// Bytes are represented as their string content for now (Phase 2+ will
+		// add a dedicated bytes type end-to-end).
+		return ast.SetPos(&ast.Constant{Value: tok.Value}, pos)
 	case lexer.NAME:
 		tok := p.advance()
 		return ast.SetPos(&ast.Name{Id: tok.Value, Ctx: ast.Load}, pos)
@@ -378,14 +409,153 @@ func (p *Parser) parseAtom() ast.Expr {
 	return ast.SetPos(&ast.Constant{Value: nil}, pos)
 }
 
-// parseStringConcat handles implicit adjacent string literal concatenation.
+// parseStringConcat handles implicit adjacent string-literal concatenation,
+// including f-strings. Adjacent literals are joined; if any piece is an
+// f-string, the result is a concatenation of literal text and str(expr) calls.
 func (p *Parser) parseStringConcat() ast.Expr {
 	pos := p.pos()
-	var sb strings.Builder
-	for p.check(lexer.STRING) {
-		sb.WriteString(p.advance().Value)
+
+	var parts []ast.Expr // each part is a str-valued expression to concatenate
+	addLiteral := func(s string) {
+		if s == "" {
+			return
+		}
+		parts = append(parts, ast.SetPos(&ast.Constant{Value: s}, pos))
 	}
-	return ast.SetPos(&ast.Constant{Value: sb.String()}, pos)
+
+	for p.check(lexer.STRING) {
+		tok := p.advance()
+		if tok.IsFString() {
+			fparts, err := p.parseFStringParts(tok.Value, pos)
+			if err != nil {
+				p.errors = append(p.errors, err)
+				return ast.SetPos(&ast.Constant{Value: ""}, pos)
+			}
+			parts = append(parts, fparts...)
+		} else {
+			addLiteral(tok.Value)
+		}
+	}
+
+	switch len(parts) {
+	case 0:
+		return ast.SetPos(&ast.Constant{Value: ""}, pos)
+	case 1:
+		// A lone literal part is a plain constant; a lone expr part needs no +.
+		return parts[0]
+	}
+	// Fold parts into a left-associative + chain.
+	acc := parts[0]
+	for _, part := range parts[1:] {
+		acc = ast.SetPos(&ast.BinOp{Left: acc, Op: ast.Add, Right: part}, pos)
+	}
+	return acc
+}
+
+// parseFStringParts splits an f-string's content into literal and expression
+// parts. Each {expr} becomes str(expr); {{ and }} are literal braces.
+// Format specs and conversions (e.g. {x:.2f}, {x!r}) are not yet supported;
+// the expression up to the closing brace is evaluated and stringified.
+func (p *Parser) parseFStringParts(content string, pos ast.Position) ([]ast.Expr, *Error) {
+	var parts []ast.Expr
+	var lit strings.Builder
+	flushLit := func() {
+		if lit.Len() > 0 {
+			parts = append(parts, ast.SetPos(&ast.Constant{Value: lit.String()}, pos))
+			lit.Reset()
+		}
+	}
+
+	runes := []rune(content)
+	for i := 0; i < len(runes); i++ {
+		c := runes[i]
+		switch c {
+		case '{':
+			if i+1 < len(runes) && runes[i+1] == '{' {
+				lit.WriteRune('{')
+				i++
+				continue
+			}
+			// Read until the matching closing brace (respecting nesting).
+			flushLit()
+			depth := 1
+			j := i + 1
+			var exprSrc strings.Builder
+			for j < len(runes) && depth > 0 {
+				switch runes[j] {
+				case '{':
+					depth++
+				case '}':
+					depth--
+					if depth == 0 {
+						j++
+						goto done
+					}
+				}
+				exprSrc.WriteRune(runes[j])
+				j++
+			}
+		done:
+			raw := exprSrc.String()
+			// Strip an optional conversion/format spec (!r, :spec) — evaluated
+			// as plain str() for now.
+			if idx := splitFormatSpec(raw); idx >= 0 {
+				raw = raw[:idx]
+			}
+			sub := New(p.filename, raw)
+			expr, err := sub.ParseExpression()
+			if err != nil {
+				return nil, &Error{Filename: p.filename, Line: pos.Line, Col: pos.Col,
+					Message: "invalid f-string expression: " + err.Error()}
+			}
+			// Wrap in str(...) so the result concatenates as text.
+			call := ast.SetPos(&ast.Call{
+				Func: ast.SetPos(&ast.Name{Id: "str", Ctx: ast.Load}, pos),
+				Args: []ast.Expr{expr},
+			}, pos)
+			parts = append(parts, call)
+			i = j - 1
+		case '}':
+			if i+1 < len(runes) && runes[i+1] == '}' {
+				lit.WriteRune('}')
+				i++
+				continue
+			}
+			lit.WriteRune('}')
+		default:
+			lit.WriteRune(c)
+		}
+	}
+	flushLit()
+	if len(parts) == 0 {
+		parts = append(parts, ast.SetPos(&ast.Constant{Value: ""}, pos))
+	}
+	return parts, nil
+}
+
+// splitFormatSpec returns the index where a conversion (!) or format spec (:)
+// begins in an f-string field, or -1 if there is none. It ignores characters
+// inside brackets/parens so that dict/call syntax is not mistaken for a spec.
+func splitFormatSpec(s string) int {
+	depth := 0
+	for i, c := range s {
+		switch c {
+		case '(', '[', '{':
+			depth++
+		case ')', ']', '}':
+			depth--
+		case '!':
+			// "!=" is a comparison, not a conversion.
+			if depth == 0 && (i+1 >= len(s) || s[i+1] != '=') {
+				return i
+			}
+		case ':':
+			if depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
 }
 
 func (p *Parser) parseParenOrTuple() ast.Expr {

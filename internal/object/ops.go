@@ -152,17 +152,14 @@ func compareObjects(left, right Object, op bytecode.CompareOp) (Object, error) {
 	// Membership tests.
 	if op == bytecode.CmpIn || op == bytecode.CmpNotIn {
 		container, item := right, left
-		if c, ok := container.(Container); ok {
-			found, err := c.Contains(item)
-			if err != nil {
-				return nil, err
-			}
-			if op == bytecode.CmpNotIn {
-				found = !found
-			}
-			return BoolFrom(found), nil
+		found, err := containsItem(container, item)
+		if err != nil {
+			return nil, err
 		}
-		return nil, fmt.Errorf("TypeError: argument of type '%s' is not iterable", container.Type().Name())
+		if op == bytecode.CmpNotIn {
+			found = !found
+		}
+		return BoolFrom(found), nil
 	}
 
 	// Map bytecode.CompareOp to object.CompareOp.
@@ -272,3 +269,35 @@ const (
 	MakeFuncHasAnnotations MakeFunctionFlags = 1 << 2
 	MakeFuncHasClosure     MakeFunctionFlags = 1 << 3
 )
+
+// containsItem implements the `in` test, consulting the type's Contains slot,
+// the Container interface, and finally falling back to iteration.
+func containsItem(container, item Object) (bool, error) {
+	if slot := container.Type().slots.Contains; slot != nil {
+		return slot(container, item)
+	}
+	if c, ok := container.(Container); ok {
+		return c.Contains(item)
+	}
+	// Fall back to iterating and comparing by equality.
+	it, err := GetIter(container)
+	if err != nil {
+		return false, fmt.Errorf("TypeError: argument of type '%s' is not iterable", container.Type().Name())
+	}
+	for {
+		v, err := it.Next()
+		if err == ErrStopIteration {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		eq, err := objectsEqual(v, item)
+		if err != nil {
+			return false, err
+		}
+		if eq {
+			return true, nil
+		}
+	}
+}

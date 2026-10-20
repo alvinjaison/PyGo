@@ -128,6 +128,34 @@ func (t *TypeObject) MRO() []*TypeObject {
 // Dict returns the type's attribute dictionary.
 func (t *TypeObject) Dict() *DictObject { return t.dict }
 
+// GetAttr implements attribute access on a type itself (e.g. ClassName.attr).
+// classmethods bind to the class; staticmethods and plain functions are
+// returned unbound; other attributes pass through.
+func (t *TypeObject) GetAttr(name string) (Object, error) {
+	attr := lookupInMRO(t, name)
+	if attr == nil {
+		return nil, NewAttributeError(t.name, name)
+	}
+	switch a := attr.(type) {
+	case *ClassMethodObject:
+		return &BoundMethodObject{Self: t, Function: a.Func}, nil
+	case *StaticMethodObject:
+		return a.Func, nil
+	default:
+		return attr, nil
+	}
+}
+
+// SetAttr sets a class-level attribute.
+func (t *TypeObject) SetAttr(name string, value Object) error {
+	return t.dict.SetItem(StrFrom(name), value)
+}
+
+// DelAttr deletes a class-level attribute.
+func (t *TypeObject) DelAttr(name string) error {
+	return t.dict.DelItem(StrFrom(name))
+}
+
 // Slots returns the type's protocol slot table.
 func (t *TypeObject) Slots() *TypeSlots { return &t.slots }
 
@@ -290,9 +318,10 @@ var (
 )
 
 func init() {
-	// Bootstrap the type system. TypeType is its own type.
-	ObjectType = &TypeObject{name: "object", bases: nil}
-	TypeType = &TypeObject{name: "type", bases: []*TypeObject{ObjectType}}
+	// Bootstrap the type system. TypeType is its own type. Both carry a dict
+	// so MRO walks (lookupInMRO) never dereference a nil namespace.
+	ObjectType = &TypeObject{name: "object", bases: nil, dict: NewDict()}
+	TypeType = &TypeObject{name: "type", bases: []*TypeObject{ObjectType}, dict: NewDict()}
 	// TypeType is its own type — circular reference.
 	// This is handled by the Type() method returning TypeType unconditionally
 	// for *TypeObject values.

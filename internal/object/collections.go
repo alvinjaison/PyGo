@@ -1,6 +1,10 @@
 package object
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/pygo/pygo/internal/bytecode"
+)
 
 // ============================================================
 // ListObject
@@ -367,25 +371,13 @@ func objectsEqual(a, b Object) (bool, error) {
 	if a == b {
 		return true, nil
 	}
-	if c, ok := a.(Comparable); ok {
-		result, err := c.RichCompare(b, OpEq)
-		if err != nil {
-			return false, err
-		}
-		if !IsNotImplemented(result) {
-			return IsTruthy(result)
-		}
+	// Route through the full comparison path, which handles built-in type
+	// slots, the Comparable interface, and user-defined __eq__ dunders.
+	result, err := compareObjects(a, b, bytecode.CmpEq)
+	if err != nil {
+		return false, nil // equality failures are treated as "not equal"
 	}
-	if c, ok := b.(Comparable); ok {
-		result, err := c.RichCompare(a, OpEq)
-		if err != nil {
-			return false, err
-		}
-		if !IsNotImplemented(result) {
-			return IsTruthy(result)
-		}
-	}
-	return false, nil
+	return IsTruthy(result)
 }
 
 // resolveIndex converts a Python index (possibly negative) to a slice index.
@@ -403,7 +395,7 @@ func resolveIndex(key Object, length int) (int, error) {
 		idx += length
 	}
 	if idx < 0 || idx >= length {
-		return 0, fmt.Errorf("IndexError: index out of range")
+		return 0, NewIndexError("index out of range")
 	}
 	return idx, nil
 }

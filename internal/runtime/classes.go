@@ -58,13 +58,51 @@ func (r *Runtime) biBuildClass(args []object.Object, _ map[string]object.Object)
 		bases = []*object.TypeObject{object.ObjectType}
 	}
 
-	// Execute the class body in a fresh namespace dict used as its globals,
-	// so STORE_NAME in the body populates the class dict.
+	// The class body runs with a fresh namespace as its globals so that
+	// STORE_NAME populates the class dict. Methods defined inside, however,
+	// must resolve names (like sibling classes/functions) against the module
+	// globals, not the transient class namespace. We capture the module
+	// globals the body function carried, then repoint each method's globals to
+	// it after the body executes.
+	moduleGlobals := bodyFn.Globals
+
 	ns := object.NewDict()
 	bodyFn.Globals = ns
 	if _, err := r.Call(nil, bodyFn, nil); err != nil {
 		return nil, err
 	}
 
+	// Repoint method globals to the enclosing module scope.
+	for _, key := range ns.Keys() {
+		val, _ := ns.GetItem(key)
+		if fn, ok := val.(*object.FunctionObject); ok {
+			fn.Globals = moduleGlobals
+		}
+		// property/classmethod/staticmethod wrap functions; repoint those too.
+		rebindDescriptorGlobals(val, moduleGlobals)
+	}
+
 	return object.NewClass(nameObj.Value, bases, ns), nil
+}
+
+// rebindDescriptorGlobals repoints the globals of functions wrapped inside
+// property/classmethod/staticmethod descriptors to the module scope.
+func rebindDescriptorGlobals(val object.Object, globals *object.DictObject) {
+	switch d := val.(type) {
+	case *object.PropertyObject:
+		if fn, ok := d.Getter.(*object.FunctionObject); ok {
+			fn.Globals = globals
+		}
+		if fn, ok := d.Setter.(*object.FunctionObject); ok {
+			fn.Globals = globals
+		}
+	case *object.ClassMethodObject:
+		if fn, ok := d.Func.(*object.FunctionObject); ok {
+			fn.Globals = globals
+		}
+	case *object.StaticMethodObject:
+		if fn, ok := d.Func.(*object.FunctionObject); ok {
+			fn.Globals = globals
+		}
+	}
 }

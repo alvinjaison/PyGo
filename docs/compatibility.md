@@ -29,6 +29,18 @@ test suite:
 - **Generators:** `yield` with real frame suspension/resumption.
 - **Classes:** definition, `__init__`, methods, single/multiple inheritance
   (C3 MRO), bound methods.
+- **Operator overloading & dunders:** `__add__`/`__sub__`/`__mul__`/`__truediv__`/
+  `__floordiv__`/`__mod__`/`__pow__`/bitwise and their reflected (`__radd__`…)
+  forms; `__neg__`/`__pos__`/`__invert__`/`__abs__`; rich comparison
+  (`__eq__`/`__ne__`/`__lt__`/`__le__`/`__gt__`/`__ge__`); container and
+  iteration protocols (`__len__`/`__getitem__`/`__setitem__`/`__delitem__`/
+  `__contains__`/`__iter__`/`__next__`, plus the legacy `__getitem__` sequence
+  iteration); `__bool__`, `__call__`, `__hash__`, and VM-dispatched
+  `__str__`/`__repr__`.
+- **Descriptors:** `@property` (getter/setter), `@classmethod`,
+  `@staticmethod`.
+- **Attribute builtins:** `getattr`, `setattr`, `hasattr`, `hash`, `iter`,
+  `next`.
 - **Builtins:** `print`, `len`, `range`, `abs`, `round`, `min`, `max`, `sum`,
   `sorted`, `reversed`, `any`, `all`, `enumerate`, `repr`, `str`, `int`,
   `float`, `bool`, `list`, `tuple`, `type`, `isinstance`, `chr`, `ord`.
@@ -43,9 +55,9 @@ test suite:
 - **CLI:** `pygo script.py`, `pygo -c`, and an interactive REPL.
 
 Not yet implemented: lazy generator expressions, `.send()`/`throw()`, keyword
-fields in `str.format()`, a distinct `bytes` type, `@property`/descriptors,
-`with`-statement exception safety, `match`, async/await, and most of the
-remaining standard library.
+fields in `str.format()`, a distinct `bytes` type, custom descriptors
+(`__get__`/`__set__`), metaclasses, `with`-statement exception safety, `match`,
+async/await, and most of the remaining standard library.
 
 ---
 
@@ -211,17 +223,19 @@ This document categorizes every significant Python 3 language and runtime featur
 | Multiple inheritance | Post-MVP | Requires C3 MRO |
 | `super()` | Post-MVP | |
 | Class attributes | Post-MVP | |
-| Class methods (`@classmethod`) | Future | |
-| Static methods (`@staticmethod`) | Future | |
-| `property` descriptor | Future | |
+| Class methods (`@classmethod`) | **Implemented** | |
+| Static methods (`@staticmethod`) | **Implemented** | |
+| `property` descriptor | **Implemented** | getter + setter |
 | `__slots__` | Future | Memory optimization |
 | `__del__` | Future | Non-deterministic with Go GC |
-| Operator overloading (`__add__`, etc.) | Post-MVP | |
-| Comparison overloading (`__eq__`, etc.) | Post-MVP | |
-| `__hash__` | Post-MVP | |
-| `__bool__` | Post-MVP | |
-| `__len__`, `__getitem__` | Post-MVP | |
-| `__iter__`, `__next__` | Post-MVP | |
+| Operator overloading (`__add__`, etc.) | **Implemented** | incl. reflected forms |
+| Comparison overloading (`__eq__`, etc.) | **Implemented** | |
+| `__hash__` | **Implemented** | |
+| `__bool__` | **Implemented** | |
+| `__len__`, `__getitem__` | **Implemented** | + `__setitem__`/`__delitem__` |
+| `__iter__`, `__next__` | **Implemented** | + sequence protocol |
+| `__call__` | **Implemented** | callable instances |
+| `__contains__` | **Implemented** | |
 | `__enter__`, `__exit__` | Future | Context managers |
 | `__getattr__`, `__setattr__` | Future | |
 | `__get__`, `__set__` (descriptors) | Complex | |
@@ -286,7 +300,7 @@ This document categorizes every significant Python 3 language and runtime featur
 | `globals()`, `locals()` | Future | |
 | `super()` | Post-MVP | |
 | `object()` | Post-MVP | |
-| `staticmethod()`, `classmethod()` | Future | |
+| `staticmethod()`, `classmethod()` | **Implemented** | |
 | `property()` | Future | |
 | `chr()`, `ord()` | Post-MVP | |
 | `hex()`, `oct()`, `bin()` | Post-MVP | |
@@ -404,10 +418,10 @@ This document categorizes every significant Python 3 language and runtime featur
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| `property` | Future | |
-| `classmethod` | Future | |
-| `staticmethod` | Future | |
-| Custom descriptors (`__get__`, `__set__`, `__delete__`) | Complex | |
+| `property` | **Implemented** | |
+| `classmethod` | **Implemented** | |
+| `staticmethod` | **Implemented** | |
+| Custom descriptors (`__get__`, `__set__`, `__delete__`) | Complex | built-in property/classmethod/staticmethod only |
 
 ---
 

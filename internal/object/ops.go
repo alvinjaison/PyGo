@@ -14,6 +14,24 @@ func BinaryOp(left, right Object, op string) (Object, error) {
 }
 
 func binaryOp(left, right Object, op string) (Object, error) {
+	// User-defined classes: dispatch through dunder methods first so Python
+	// __add__/__radd__/etc. take precedence over built-in coercion.
+	if _, ok := left.(*InstanceObject); ok {
+		if res, handled, err := tryBinaryDunder(left, right, op); handled || err != nil {
+			if err != nil {
+				return nil, err
+			}
+			return res, nil
+		}
+	} else if _, ok := right.(*InstanceObject); ok {
+		if res, handled, err := tryBinaryDunder(left, right, op); handled || err != nil {
+			if err != nil {
+				return nil, err
+			}
+			return res, nil
+		}
+	}
+
 	// Try left operand's slot first.
 	if result, err, ok := trySlotOp(left, right, op, false); ok {
 		if !IsNotImplemented(result) {
@@ -26,7 +44,7 @@ func binaryOp(left, right Object, op string) (Object, error) {
 			return result, err
 		}
 	}
-	return nil, fmt.Errorf("TypeError: unsupported operand type(s) for %s: '%s' and '%s'",
+	return nil, NewTypeError("unsupported operand type(s) for %s: '%s' and '%s'",
 		op, left.Type().Name(), right.Type().Name())
 }
 
@@ -104,6 +122,14 @@ func UnaryOp(val Object, op string) (Object, error) {
 }
 
 func unaryOp(val Object, op string) (Object, error) {
+	// User-defined classes: dispatch through __neg__/__pos__/__invert__.
+	if res, handled, err := tryUnaryDunder(val, op); handled || err != nil {
+		if err != nil {
+			return nil, err
+		}
+		return res, nil
+	}
+
 	s := val.Type().Slots()
 	switch op {
 	case "-":
@@ -181,6 +207,24 @@ func compareObjects(left, right Object, op bytecode.CompareOp) (Object, error) {
 		return nil, fmt.Errorf("unknown compare op %d", op)
 	}
 
+	// User-defined classes: dispatch through rich-comparison dunder methods
+	// first so Python __eq__/__lt__/etc. take precedence.
+	if _, lok := left.(*InstanceObject); lok {
+		if res, handled, err := tryCompareDunder(left, right, objOp); handled || err != nil {
+			if err != nil {
+				return nil, err
+			}
+			return res, nil
+		}
+	} else if _, rok := right.(*InstanceObject); rok {
+		if res, handled, err := tryCompareDunder(left, right, objOp); handled || err != nil {
+			if err != nil {
+				return nil, err
+			}
+			return res, nil
+		}
+	}
+
 	// Try left's comparison: type slot first, then the Comparable interface.
 	if slot := left.Type().slots.RichCmp; slot != nil {
 		result, err := slot(left, right, objOp)
@@ -250,7 +294,20 @@ func reflectCompareOp(op CompareOp) CompareOp {
 }
 
 // GetIter returns an iterator for obj, or a TypeError if obj is not iterable.
+//
+// For user-defined instances, __iter__ is consulted first (it may perform
+// setup and return self), and only then the __next__-based iterator protocol.
+// Built-in iterators (which implement Iterator directly) are returned as-is.
 func GetIter(obj Object) (Iterator, error) {
+	if inst, ok := obj.(*InstanceObject); ok {
+		if hasDunder(inst, "__iter__") || hasDunder(inst, "__next__") {
+			return inst.Iter()
+		}
+		if hasDunder(inst, "__getitem__") {
+			return newSeqIterator(inst), nil
+		}
+		return nil, fmt.Errorf("TypeError: '%s' object is not iterable", obj.Type().Name())
+	}
 	if it, ok := obj.(Iterator); ok {
 		return it, nil
 	}
@@ -270,14 +327,22 @@ const (
 	MakeFuncHasClosure     MakeFunctionFlags = 1 << 3
 )
 
-// containsItem implements the `in` test, consulting the type's Contains slot,
-// the Container interface, and finally falling back to iteration.
+// containsItem implements the `in` test, consulting a user __contains__, the
+// type's Contains slot, the Container interface, and finally iteration.
 func containsItem(container, item Object) (bool, error) {
-	if slot := container.Type().slots.Contains; slot != nil {
-		return slot(container, item)
-	}
-	if c, ok := container.(Container); ok {
-		return c.Contains(item)
+	// User-defined classes: prefer __contains__, else fall through to the
+	// iteration protocol below (so classes with only __iter__/__getitem__ work).
+	if inst, ok := container.(*InstanceObject); ok {
+		if inst.HasContains() {
+			return inst.Contains(item)
+		}
+	} else {
+		if slot := container.Type().slots.Contains; slot != nil {
+			return slot(container, item)
+		}
+		if c, ok := container.(Container); ok {
+			return c.Contains(item)
+		}
 	}
 	// Fall back to iterating and comparing by equality.
 	it, err := GetIter(container)

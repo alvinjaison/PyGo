@@ -40,6 +40,15 @@ func (r *Runtime) installBuiltins() {
 	reg("chr", biChr)
 	reg("ord", biOrd)
 	reg("enumerate", biEnumerate)
+	reg("property", biProperty)
+	reg("classmethod", biClassMethod)
+	reg("staticmethod", biStaticMethod)
+	reg("hash", biHash)
+	reg("iter", biIter)
+	reg("next", biNext)
+	reg("getattr", biGetAttr)
+	reg("setattr", biSetAttr)
+	reg("hasattr", biHasAttr)
 	reg("__build_class__", r.biBuildClass)
 
 	// Expose core exception types as builtins so `raise ValueError(...)` works.
@@ -85,6 +94,13 @@ func biLen(args []object.Object, _ map[string]object.Object) (object.Object, err
 	if len(args) != 1 {
 		return nil, object.NewTypeError("len() takes exactly one argument (%d given)", len(args))
 	}
+	// Instances only have a length if they define __len__.
+	if inst, ok := args[0].(*object.InstanceObject); ok {
+		if !inst.HasLen() {
+			return nil, object.NewTypeError("object of type '%s' has no len()", args[0].Type().Name())
+		}
+		return object.IntFrom(int64(inst.Len())), nil
+	}
 	if lp, ok := args[0].(object.LenProvider); ok {
 		return object.IntFrom(int64(lp.Len())), nil
 	}
@@ -94,6 +110,13 @@ func biLen(args []object.Object, _ map[string]object.Object) (object.Object, err
 func biAbs(args []object.Object, _ map[string]object.Object) (object.Object, error) {
 	if len(args) != 1 {
 		return nil, object.NewTypeError("abs() takes exactly one argument")
+	}
+	// User-defined __abs__.
+	if inst, ok := args[0].(*object.InstanceObject); ok {
+		if m, found := inst.Dunder("__abs__"); found {
+			return object.Invoke(m, nil)
+		}
+		return nil, object.NewTypeError("bad operand type for abs(): '%s'", args[0].Type().Name())
 	}
 	switch n := args[0].(type) {
 	case *object.IntObject:
@@ -526,4 +549,146 @@ func sortStable(items []object.Object, less func(a, b object.Object) bool) {
 		}
 		items[j+1] = key
 	}
+}
+
+// property(fget[, fset]) — creates a property descriptor.
+func biProperty(args []object.Object, _ map[string]object.Object) (object.Object, error) {
+	var getter, setter object.Object = object.None, object.None
+	if len(args) > 0 {
+		getter = args[0]
+	}
+	if len(args) > 1 {
+		setter = args[1]
+	}
+	return object.NewProperty(getter, setter), nil
+}
+
+// classmethod(func) — wraps func as a classmethod descriptor.
+func biClassMethod(args []object.Object, _ map[string]object.Object) (object.Object, error) {
+	if len(args) != 1 {
+		return nil, object.NewTypeError("classmethod expected 1 argument")
+	}
+	return object.NewClassMethod(args[0]), nil
+}
+
+// staticmethod(func) — wraps func as a staticmethod descriptor.
+func biStaticMethod(args []object.Object, _ map[string]object.Object) (object.Object, error) {
+	if len(args) != 1 {
+		return nil, object.NewTypeError("staticmethod expected 1 argument")
+	}
+	return object.NewStaticMethod(args[0]), nil
+}
+
+// hash(obj) — returns the object's hash.
+func biHash(args []object.Object, _ map[string]object.Object) (object.Object, error) {
+	if len(args) != 1 {
+		return nil, object.NewTypeError("hash() takes exactly one argument")
+	}
+	h, ok := args[0].(object.Hashable)
+	if !ok {
+		return nil, object.NewTypeError("unhashable type: '%s'", args[0].Type().Name())
+	}
+	v, err := h.Hash()
+	if err != nil {
+		return nil, err
+	}
+	return object.IntFrom(v), nil
+}
+
+// iter(obj) — returns an iterator over obj.
+func biIter(args []object.Object, _ map[string]object.Object) (object.Object, error) {
+	if len(args) != 1 {
+		return nil, object.NewTypeError("iter() takes 1 argument")
+	}
+	it, err := object.GetIter(args[0])
+	if err != nil {
+		return nil, err
+	}
+	return it, nil
+}
+
+// next(iterator[, default]) — advances an iterator.
+func biNext(args []object.Object, _ map[string]object.Object) (object.Object, error) {
+	if len(args) == 0 {
+		return nil, object.NewTypeError("next() takes at least 1 argument")
+	}
+	it, ok := args[0].(object.Iterator)
+	if !ok {
+		return nil, object.NewTypeError("'%s' object is not an iterator", args[0].Type().Name())
+	}
+	v, err := it.Next()
+	if object.IsStopIteration(err) {
+		if len(args) > 1 {
+			return args[1], nil
+		}
+		return nil, object.NewException(object.TypeStopIteration, "")
+	}
+	if err != nil {
+		return nil, err
+	}
+	return v, nil
+}
+
+// getattr(obj, name[, default]) — attribute access by name.
+func biGetAttr(args []object.Object, _ map[string]object.Object) (object.Object, error) {
+	if len(args) < 2 {
+		return nil, object.NewTypeError("getattr expected at least 2 arguments")
+	}
+	name, ok := args[1].(*object.StrObject)
+	if !ok {
+		return nil, object.NewTypeError("attribute name must be string")
+	}
+	holder, ok := args[0].(object.AttributeHolder)
+	if !ok {
+		if len(args) > 2 {
+			return args[2], nil
+		}
+		return nil, object.NewAttributeError(args[0].Type().Name(), name.Value)
+	}
+	v, err := holder.GetAttr(name.Value)
+	if err != nil {
+		if len(args) > 2 {
+			return args[2], nil
+		}
+		return nil, err
+	}
+	return v, nil
+}
+
+// setattr(obj, name, value) — attribute assignment by name.
+func biSetAttr(args []object.Object, _ map[string]object.Object) (object.Object, error) {
+	if len(args) != 3 {
+		return nil, object.NewTypeError("setattr expected 3 arguments")
+	}
+	name, ok := args[1].(*object.StrObject)
+	if !ok {
+		return nil, object.NewTypeError("attribute name must be string")
+	}
+	holder, ok := args[0].(object.AttributeHolder)
+	if !ok {
+		return nil, object.NewTypeError("'%s' object has no settable attributes", args[0].Type().Name())
+	}
+	if err := holder.SetAttr(name.Value, args[2]); err != nil {
+		return nil, err
+	}
+	return object.None, nil
+}
+
+// hasattr(obj, name) — whether attribute access succeeds.
+func biHasAttr(args []object.Object, _ map[string]object.Object) (object.Object, error) {
+	if len(args) != 2 {
+		return nil, object.NewTypeError("hasattr expected 2 arguments")
+	}
+	name, ok := args[1].(*object.StrObject)
+	if !ok {
+		return nil, object.NewTypeError("attribute name must be string")
+	}
+	holder, ok := args[0].(object.AttributeHolder)
+	if !ok {
+		return object.PyFalse, nil
+	}
+	if _, err := holder.GetAttr(name.Value); err != nil {
+		return object.PyFalse, nil
+	}
+	return object.PyTrue, nil
 }

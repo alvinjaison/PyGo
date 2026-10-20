@@ -181,17 +181,20 @@ func (f *Frame) UnwindToHandler() (Block, bool) {
 	return Block{}, false
 }
 
-// Traceback builds a TracebackObject from this frame chain.
+// Traceback builds a TracebackObject from this frame chain. Synthetic frames
+// without a Code object (e.g. the throwaway caller used by CallExternal) are
+// skipped.
 func (f *Frame) Traceback() *object.TracebackObject {
 	var frames []object.TracebackFrame
-	cur := f
-	for cur != nil {
+	for cur := f; cur != nil; cur = cur.Back {
+		if cur.Code == nil {
+			continue
+		}
 		frames = append([]object.TracebackFrame{{
 			Filename: cur.Code.Filename,
 			FuncName: cur.Code.Name,
 			Line:     cur.Code.LineForOffset(cur.PC - 1),
 		}}, frames...)
-		cur = cur.Back
 	}
 	return &object.TracebackObject{Frames: frames}
 }

@@ -70,10 +70,18 @@ func (p *Parser) parseStatement() ast.Stmt {
 func (p *Parser) parseBlock() []ast.Stmt {
 	p.expect(lexer.COLON)
 
-	// Single-line suite: `if x: return 1`
+	// Single-line suite: `if x: return 1` or `def f(): return x; y = 2`.
 	if p.cur.Type != lexer.NEWLINE {
 		var body []ast.Stmt
-		body = append(body, p.parseSimpleStatement())
+		for {
+			body = append(body, p.parseSmallStatement())
+			if !p.accept(lexer.SEMICOLON) {
+				break
+			}
+			if p.cur.Type == lexer.NEWLINE || p.cur.Type == lexer.EOF {
+				break
+			}
+		}
 		return body
 	}
 
@@ -96,6 +104,44 @@ func (p *Parser) parseBlock() []ast.Stmt {
 	}
 	p.expect(lexer.DEDENT)
 	return body
+}
+
+// parseSmallStatement parses a statement that may appear on a single-line
+// suite after a colon (e.g. `def f(): return x`). It handles the simple
+// keyword statements plus assignments/expressions, but not compound blocks.
+func (p *Parser) parseSmallStatement() ast.Stmt {
+	switch p.cur.Type {
+	case lexer.RETURN:
+		return p.parseReturn()
+	case lexer.PASS:
+		pos := p.pos()
+		p.advance()
+		return ast.SetPos(&ast.Pass{}, pos)
+	case lexer.BREAK:
+		pos := p.pos()
+		p.advance()
+		return ast.SetPos(&ast.Break{}, pos)
+	case lexer.CONTINUE:
+		pos := p.pos()
+		p.advance()
+		return ast.SetPos(&ast.Continue{}, pos)
+	case lexer.RAISE:
+		return p.parseRaise()
+	case lexer.DEL:
+		return p.parseDel()
+	case lexer.ASSERT:
+		return p.parseAssert()
+	case lexer.GLOBAL:
+		return p.parseGlobal()
+	case lexer.NONLOCAL:
+		return p.parseNonlocal()
+	case lexer.IMPORT:
+		return p.parseImport()
+	case lexer.FROM:
+		return p.parseFromImport()
+	default:
+		return p.parseSimpleStatement()
+	}
 }
 
 // parseSimpleStatement parses assignment, augmented assignment, annotated

@@ -239,7 +239,11 @@ var (
 	TypeUnboundLocalError *TypeObject
 )
 
-func init() {
+// installExceptionTypes constructs the built-in exception type hierarchy.
+// It is called from the types.go init() after the base exception types
+// (BaseExceptionType, ExceptionType) exist, to avoid cross-file init ordering
+// problems (Go does not guarantee init order across files in a package).
+func installExceptionTypes() {
 	arithType := newTypeObject("ArithmeticError", []*TypeObject{ExceptionType}, TypeSlots{})
 	lookupType := newTypeObject("LookupError", []*TypeObject{ExceptionType}, TypeSlots{})
 	nameErrType := newTypeObject("NameError", []*TypeObject{ExceptionType}, TypeSlots{})

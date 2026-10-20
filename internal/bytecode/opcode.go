@@ -87,6 +87,9 @@ const (
 	BUILD_LIST           Opcode = 103
 	BUILD_SET            Opcode = 104
 	BUILD_MAP            Opcode = 105
+	LIST_APPEND          Opcode = 145 // append TOS to the list at TOS1 (comprehensions)
+	SET_ADD              Opcode = 146
+	MAP_ADD              Opcode = 147
 	BUILD_CONST_KEY_MAP  Opcode = 141
 	BUILD_STRING         Opcode = 157
 	BUILD_TUPLE_UNPACK_WITH_CALL Opcode = 158
@@ -189,10 +192,11 @@ const (
 	CmpNotIn
 	CmpIs
 	CmpIsNot
+	CmpExcMatch // exception-match test used by except clauses
 )
 
 func (c CompareOp) String() string {
-	return [...]string{"<", "<=", "==", "!=", ">", ">=", "in", "not in", "is", "is not"}[c]
+	return [...]string{"<", "<=", "==", "!=", ">", ">=", "in", "not in", "is", "is not", "exc-match"}[c]
 }
 
 // MakeFunctionFlag is a bitmask for the MAKE_FUNCTION instruction's argument.

@@ -588,3 +588,34 @@ const (
 	Store
 	Del
 )
+
+// ============================================================
+// Position attachment helper
+// ============================================================
+
+// posSetter is implemented by all node types that embed baseNode
+// (directly or via baseStmt / baseExpr). It allows external packages,
+// such as the parser, to attach source positions to nodes they construct
+// with struct literals.
+type posSetter interface {
+	setPos(Position)
+}
+
+func (b *baseNode) setPos(p Position) { b.pos = p }
+
+// SetPos attaches a source position to a node and returns the node.
+// It is used by the parser, which constructs nodes with struct literals
+// (exported fields) and then records their source location.
+//
+// If node does not support position attachment, SetPos is a no-op.
+func SetPos[T Node](node T, p Position) T {
+	if s, ok := any(node).(posSetter); ok {
+		s.setPos(p)
+	}
+	return node
+}
+
+// NewArg constructs an Arg with a position (the pos field is unexported).
+func NewArg(name string, annotation Expr, p Position) *Arg {
+	return &Arg{Arg: name, Annotation: annotation, pos: p}
+}

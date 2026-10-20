@@ -264,6 +264,9 @@ var (
 	// FrozenSetType is the type of frozenset objects.
 	FrozenSetType *TypeObject
 
+	// SliceType is the type of slice objects.
+	SliceType *TypeObject
+
 	// FunctionType is the type of user-defined functions.
 	FunctionType *TypeObject
 
@@ -305,6 +308,7 @@ func init() {
 	DictType = newTypeObject("dict", []*TypeObject{ObjectType}, TypeSlots{})
 	SetType = newTypeObject("set", []*TypeObject{ObjectType}, TypeSlots{})
 	FrozenSetType = newTypeObject("frozenset", []*TypeObject{ObjectType}, TypeSlots{})
+	SliceType = newTypeObject("slice", []*TypeObject{ObjectType}, TypeSlots{})
 	FunctionType = newTypeObject("function", []*TypeObject{ObjectType}, TypeSlots{})
 	BuiltinFunctionType = newTypeObject("builtin_function_or_method", []*TypeObject{ObjectType}, TypeSlots{})
 	MethodType = newTypeObject("method", []*TypeObject{ObjectType}, TypeSlots{})
@@ -315,4 +319,11 @@ func init() {
 
 	// Fix up BoolType base after IntType is initialized.
 	BoolType.bases = []*TypeObject{IntType}
+
+	// Build the exception hierarchy now that ExceptionType/BaseExceptionType
+	// exist (defined above in this same init).
+	installExceptionTypes()
+
+	// Wire numeric/comparison slots now that all type objects exist.
+	installCoreSlots()
 }

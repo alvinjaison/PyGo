@@ -184,7 +184,16 @@ func compareObjects(left, right Object, op bytecode.CompareOp) (Object, error) {
 		return nil, fmt.Errorf("unknown compare op %d", op)
 	}
 
-	// Try left's RichCompare.
+	// Try left's comparison: type slot first, then the Comparable interface.
+	if slot := left.Type().slots.RichCmp; slot != nil {
+		result, err := slot(left, right, objOp)
+		if err != nil {
+			return nil, err
+		}
+		if !IsNotImplemented(result) {
+			return result, nil
+		}
+	}
 	if c, ok := left.(Comparable); ok {
 		result, err := c.RichCompare(right, objOp)
 		if err != nil {
@@ -195,9 +204,18 @@ func compareObjects(left, right Object, op bytecode.CompareOp) (Object, error) {
 		}
 	}
 
-	// Try right's reflected RichCompare.
+	// Try right's reflected comparison.
+	reflected := reflectCompareOp(objOp)
+	if slot := right.Type().slots.RichCmp; slot != nil {
+		result, err := slot(right, left, reflected)
+		if err != nil {
+			return nil, err
+		}
+		if !IsNotImplemented(result) {
+			return result, nil
+		}
+	}
 	if c, ok := right.(Comparable); ok {
-		reflected := reflectCompareOp(objOp)
 		result, err := c.RichCompare(left, reflected)
 		if err != nil {
 			return nil, err

@@ -4,6 +4,9 @@ import (
 	"context"
 	"io"
 	"time"
+
+	"github.com/pygo/pygo/internal/object"
+	"github.com/pygo/pygo/internal/runtime"
 )
 
 // runtimeConfig holds all configuration for a Runtime.
@@ -25,116 +28,166 @@ func defaultConfig() *runtimeConfig {
 	}
 }
 
-// internalRuntime is the internal implementation of the runtime.
-// It connects the public API to the internal packages.
-//
-// TODO(Phase 1): Replace these stubs with real implementations backed by
-// internal/lexer, internal/parser, internal/compiler, internal/vm, and
-// internal/object as those packages are built out.
+// internalRuntime connects the public API to the internal runtime.
 type internalRuntime struct {
 	cfg *runtimeConfig
+	rt  *runtime.Runtime
 }
 
 func newInternalRuntime(cfg *runtimeConfig) *internalRuntime {
-	return &internalRuntime{cfg: cfg}
+	rt := runtime.New(runtime.Config{
+		Stdlib:       cfg.stdlib,
+		SearchPath:   cfg.searchPath,
+		MaxCallDepth: cfg.maxCallDepth,
+		Restricted:   cfg.restricted,
+	})
+	return &internalRuntime{cfg: cfg, rt: rt}
+}
+
+// withTimeout applies the configured execution timeout to ctx.
+func (r *internalRuntime) withTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if r.cfg.timeout > 0 {
+		return context.WithTimeout(ctx, r.cfg.timeout)
+	}
+	return ctx, func() {}
 }
 
 func (r *internalRuntime) runString(ctx context.Context, source, filename string) error {
-	// TODO(Phase 1): Implement: lex → parse → compile → vm.Run
-	_ = ctx
-	_ = source
-	_ = filename
-	return nil
+	ctx, cancel := r.withTimeout(ctx)
+	defer cancel()
+	return toPublicError(r.rt.RunString(ctx, source, filename))
 }
 
 func (r *internalRuntime) runFile(ctx context.Context, path string) error {
-	// TODO(Phase 1): Read file, then runString.
-	_ = ctx
-	_ = path
-	return nil
+	ctx, cancel := r.withTimeout(ctx)
+	defer cancel()
+	return toPublicError(r.rt.RunFile(ctx, path))
 }
 
 func (r *internalRuntime) eval(ctx context.Context, expr string) (Value, error) {
-	// TODO(Phase 1): Compile as expression, run, return result.
-	_ = ctx
-	_ = expr
-	return nil, nil
+	ctx, cancel := r.withTimeout(ctx)
+	defer cancel()
+	result, err := r.rt.Eval(ctx, expr)
+	if err != nil {
+		return nil, toPublicError(err)
+	}
+	return newValue(result), nil
 }
 
 func (r *internalRuntime) set(name string, value interface{}) error {
-	// TODO(Phase 1): Convert value to object.Object and store in globals.
-	_ = name
-	_ = value
+	obj, err := goToPython(value)
+	if err != nil {
+		return err
+	}
+	r.rt.Set(name, obj)
 	return nil
 }
 
 func (r *internalRuntime) get(name string) (Value, error) {
-	// TODO(Phase 1): Look up name in globals, return wrapped Value.
-	_ = name
-	return nil, nil
+	v, ok := r.rt.Get(name)
+	if !ok {
+		return nil, &Error{Type: "NameError", Message: "name '" + name + "' is not defined"}
+	}
+	return newValue(v), nil
 }
 
 func (r *internalRuntime) delete(name string) {
-	// TODO(Phase 1): Remove from globals.
-	_ = name
+	r.rt.Delete(name)
 }
 
 func (r *internalRuntime) registerFunction(name string, fn interface{}) error {
-	// TODO(Phase 4): Wrap fn via internal/interop and store in globals.
-	_ = name
-	_ = fn
+	wrapped, err := wrapGoFunction(name, fn)
+	if err != nil {
+		return err
+	}
+	r.rt.Set(name, wrapped)
 	return nil
 }
 
 func (r *internalRuntime) register(name string, value interface{}) error {
-	// TODO(Phase 4): Wrap value via internal/interop and store in globals.
-	_ = name
-	_ = value
+	obj, err := goToPython(value)
+	if err != nil {
+		return err
+	}
+	r.rt.Set(name, obj)
 	return nil
 }
 
 func (r *internalRuntime) registerModule(name string, attrs map[string]interface{}) error {
-	// TODO(Phase 5): Create module object, populate, register with importer.
-	_ = name
-	_ = attrs
+	mod := object.NewModule(name)
+	for k, v := range attrs {
+		var obj object.Object
+		var err error
+		// Functions are wrapped as callables; everything else converted directly.
+		obj, err = wrapGoFunction(k, v)
+		if err != nil {
+			obj, err = goToPython(v)
+			if err != nil {
+				return err
+			}
+		}
+		if err := mod.SetAttr(k, obj); err != nil {
+			return err
+		}
+	}
+	r.rt.Set(name, mod)
 	return nil
 }
 
 func (r *internalRuntime) call(ctx context.Context, callable Value, args []interface{}) (Value, error) {
-	// TODO(Phase 4): Convert args, invoke callable, return result.
-	_ = ctx
-	_ = callable
-	_ = args
-	return nil, nil
+	v, ok := callable.(*valueImpl)
+	if !ok {
+		return nil, &Error{Type: "TypeError", Message: "not a callable value"}
+	}
+	return r.callObject(ctx, v.obj, args)
 }
 
 func (r *internalRuntime) callByName(ctx context.Context, name string, args []interface{}) (Value, error) {
-	// TODO(Phase 4): Look up name, then call.
-	_ = ctx
-	_ = name
-	_ = args
-	return nil, nil
+	obj, ok := r.rt.Get(name)
+	if !ok {
+		return nil, &Error{Type: "NameError", Message: "name '" + name + "' is not defined"}
+	}
+	return r.callObject(ctx, obj, args)
 }
 
 func (r *internalRuntime) callMethod(ctx context.Context, obj Value, method string, args []interface{}) (Value, error) {
-	// TODO(Phase 4): GetAttr(method) on obj, then call.
-	_ = ctx
-	_ = obj
-	_ = method
-	_ = args
-	return nil, nil
+	v, ok := obj.(*valueImpl)
+	if !ok {
+		return nil, &Error{Type: "TypeError", Message: "not a value"}
+	}
+	holder, ok := v.obj.(object.AttributeHolder)
+	if !ok {
+		return nil, &Error{Type: "AttributeError", Message: "object has no attributes"}
+	}
+	m, err := holder.GetAttr(method)
+	if err != nil {
+		return nil, toPublicError(err)
+	}
+	return r.callObject(ctx, m, args)
+}
+
+func (r *internalRuntime) callObject(ctx context.Context, callable object.Object, args []interface{}) (Value, error) {
+	ctx, cancel := r.withTimeout(ctx)
+	defer cancel()
+	objArgs := make([]object.Object, len(args))
+	for i, a := range args {
+		obj, err := goToPython(a)
+		if err != nil {
+			return nil, err
+		}
+		objArgs[i] = obj
+	}
+	result, err := r.rt.Call(ctx, callable, objArgs)
+	if err != nil {
+		return nil, toPublicError(err)
+	}
+	return newValue(result), nil
 }
 
 func (r *internalRuntime) disassemble(source string, w io.Writer) error {
-	// TODO(Phase 1): Compile source, write disassembly via bytecode.Disassemble.
-	_ = source
-	_ = w
-	return nil
+	return r.rt.Disassemble(source, w)
 }
 
 func (r *internalRuntime) dumpAST(source string, w io.Writer) error {
-	// TODO(Phase 1): Parse source, write AST dump via ast.Sprint.
-	_ = source
-	_ = w
-	return nil
+	return r.rt.DumpAST(source, w)
 }

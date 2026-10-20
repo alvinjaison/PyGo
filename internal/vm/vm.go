@@ -3,6 +3,7 @@ package vm
 import (
 	"context"
 	"fmt"
+	"math/big"
 
 	"github.com/pygo/pygo/internal/bytecode"
 	"github.com/pygo/pygo/internal/object"
@@ -53,6 +54,9 @@ func (v *VM) Run(frame *Frame) (result object.Object, err error) {
 	// Recover from unexpected panics so the host application is not crashed.
 	defer func() {
 		if r := recover(); r != nil {
+			if debugPanics {
+				panic(r)
+			}
 			err = fmt.Errorf("internal VM error: %v", r)
 		}
 	}()
@@ -221,6 +225,20 @@ func (v *VM) execute(f *Frame, instr bytecode.Instruction) (object.Object, error
 		} else {
 			f.FreeVars[idx-len(f.Cells)].Value = val
 		}
+
+	case bytecode.LOAD_CLOSURE:
+		// Push the cell object itself (used to build a closure tuple for
+		// MAKE_FUNCTION), not the value inside it.
+		idx := int(instr.Arg)
+		var cell *object.CellObject
+		if idx < len(f.Cells) {
+			cell = f.Cells[idx]
+		} else if idx-len(f.Cells) < len(f.FreeVars) {
+			cell = f.FreeVars[idx-len(f.Cells)]
+		} else {
+			cell = &object.CellObject{}
+		}
+		f.Push(cell)
 
 	// ---- Attribute access ----
 
@@ -399,6 +417,10 @@ func (v *VM) execute(f *Frame, instr bytecode.Instruction) (object.Object, error
 
 	case bytecode.COMPARE_OP:
 		right, left := f.Pop(), f.Pop()
+		if bytecode.CompareOp(instr.Arg) == bytecode.CmpExcMatch {
+			f.Push(object.BoolFrom(excMatches(left, right)))
+			break
+		}
 		result, err := object.CompareObjects(left, right, bytecode.CompareOp(instr.Arg))
 		if err != nil {
 			return nil, err
@@ -515,12 +537,83 @@ func (v *VM) execute(f *Frame, instr bytecode.Instruction) (object.Object, error
 		f.Push(d)
 
 	case bytecode.BUILD_SET:
-		// TODO(Phase 2): Implement SetObject and BUILD_SET.
-		return nil, fmt.Errorf("set literals not yet implemented")
+		count := int(instr.Arg)
+		items := make([]object.Object, count)
+		for i := count - 1; i >= 0; i-- {
+			items[i] = f.Pop()
+		}
+		set, err := object.NewSetFrom(items)
+		if err != nil {
+			return nil, err
+		}
+		f.Push(set)
 
 	case bytecode.BUILD_SLICE:
-		// TODO(Phase 2): Implement slices.
-		return nil, fmt.Errorf("slices not yet implemented")
+		step := f.Pop()
+		stop := f.Pop()
+		start := f.Pop()
+		f.Push(object.NewSlice(start, stop, step))
+
+	case bytecode.LIST_APPEND:
+		// TOS is the value; the list is below the comprehension's loop state.
+		// The compiler arranges the list to be at a fixed depth; here the list
+		// is the value just under TOS after FOR_ITER pushes. We locate it as
+		// the nearest ListObject below TOS.
+		val := f.Pop()
+		lst := f.findListBelow()
+		if lst == nil {
+			return nil, object.NewRuntimeError("LIST_APPEND: no list on stack")
+		}
+		lst.Append(val)
+
+	case bytecode.DUP_TOP_TWO:
+		a := f.PeekN(1)
+		b := f.PeekN(0)
+		f.Push(a)
+		f.Push(b)
+
+	case bytecode.ROT_FOUR:
+		a := f.Pop()
+		b := f.Pop()
+		c := f.Pop()
+		d := f.Pop()
+		f.Push(a)
+		f.Push(d)
+		f.Push(c)
+		f.Push(b)
+
+	case bytecode.CALL_FUNCTION_KW:
+		total := int(instr.Arg)
+		kwConst := f.Pop()
+		kwNames := extractKwNames(kwConst)
+		nkw := len(kwNames)
+		npos := total - nkw
+
+		kwargs := map[string]object.Object{}
+		kwVals := make([]object.Object, nkw)
+		for i := nkw - 1; i >= 0; i-- {
+			kwVals[i] = f.Pop()
+		}
+		for i, name := range kwNames {
+			kwargs[name] = kwVals[i]
+		}
+		posArgs := make([]object.Object, npos)
+		for i := npos - 1; i >= 0; i-- {
+			posArgs[i] = f.Pop()
+		}
+		callee := f.Pop()
+		result, err := v.callObject(f, callee, posArgs, kwargs)
+		if err != nil {
+			return nil, err
+		}
+		f.Push(result)
+
+	case bytecode.RERAISE:
+		if f.CurrentException != nil {
+			return nil, f.CurrentException
+		}
+		exc := f.Pop()
+		return nil, toException(exc)
 
 	// ---- Unpacking ----
 
@@ -617,7 +710,8 @@ func (v *VM) execute(f *Frame, instr bytecode.Instruction) (object.Object, error
 		return nil, exc
 
 	case bytecode.SETUP_FINALLY:
-		f.PushBlock(BlockExcept, int(instr.Arg)+f.PC)
+		// The compiler emits the handler as an absolute instruction offset.
+		f.PushBlock(BlockExcept, int(instr.Arg))
 
 	case bytecode.POP_BLOCK:
 		if f.HasBlock() {
@@ -625,10 +719,9 @@ func (v *VM) execute(f *Frame, instr bytecode.Instruction) (object.Object, error
 		}
 
 	case bytecode.POP_EXCEPT:
+		// Clears the exception currently being handled. The try block was
+		// already removed from the block stack during unwinding.
 		f.CurrentException = nil
-		if f.HasBlock() {
-			f.PopBlock()
-		}
 
 	// ---- Import ----
 
@@ -702,9 +795,7 @@ func (v *VM) callObject(caller *Frame, callee object.Object, args []object.Objec
 		return v.callObject(caller, fn.Function, fullArgs, kwargs)
 
 	case *object.TypeObject:
-		// Calling a type creates an instance.
-		// TODO(Phase 3): Implement full __new__ / __init__ protocol.
-		return nil, fmt.Errorf("TypeError: cannot call type '%s' (class instantiation not yet implemented)", fn.Name())
+		return v.instantiate(caller, fn, args, kwargs)
 
 	default:
 		if c, ok := callee.(object.Callable); ok {
@@ -724,6 +815,7 @@ func buildFrame(fn *object.FunctionObject, args []object.Object, kwargs map[stri
 
 	nargs := code.ArgCount
 	nposonly := code.PosOnlyArgCount
+	defer seedCellParams(frame)
 
 	// Bind positional arguments.
 	if len(args) < nargs-len(fn.Defaults) {
@@ -813,11 +905,24 @@ func constantToObject(c interface{}) object.Object {
 		return object.FloatFrom(v)
 	case string:
 		return object.StrFrom(v)
+	case *big.Int:
+		return object.IntFromBig(v)
 	case *bytecode.Code:
 		return &codeConstant{code: v}
 	}
-	return object.None
+	// Keyword-name tuple produced by the compiler for CALL_FUNCTION_KW is
+	// handled specially in the VM, not converted here. Any other constant is
+	// wrapped as a passthrough so it can be recovered via type assertion.
+	return &rawConstant{value: c}
 }
+
+// rawConstant carries a non-Python compiler constant (e.g., the keyword-name
+// tuple) through the value stack so the VM can recover it by type assertion.
+type rawConstant struct{ value interface{} }
+
+func (r *rawConstant) Type() *object.TypeObject { return object.ObjectType }
+func (r *rawConstant) String() string            { return "<raw-constant>" }
+func (r *rawConstant) Repr() string              { return r.String() }
 
 // codeConstant wraps a *bytecode.Code as an Object for the constant pool.
 // It is only used internally during MAKE_FUNCTION execution.

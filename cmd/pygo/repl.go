@@ -25,80 +25,98 @@ func runREPL(cfg *config) int {
 
 	scanner := bufio.NewScanner(os.Stdin)
 	var buf strings.Builder
+	inBlock := false // true once we've started a compound (indented) statement
 	prompt := ">>> "
+
+	flush := func() {
+		src := buf.String()
+		buf.Reset()
+		inBlock = false
+		prompt = ">>> "
+		if strings.TrimSpace(src) == "" {
+			return
+		}
+		runREPLChunk(rt, src)
+	}
 
 	for {
 		fmt.Print(prompt)
 		if !scanner.Scan() {
-			// EOF (Ctrl-D)
 			fmt.Println()
+			if buf.Len() > 0 {
+				flush()
+			}
 			break
 		}
 
 		line := scanner.Text()
-
-		// Handle exit() / quit() as special cases before parsing.
 		trimmed := strings.TrimSpace(line)
-		if trimmed == "exit()" || trimmed == "quit()" {
+
+		if buf.Len() == 0 && (trimmed == "exit()" || trimmed == "quit()") {
 			break
 		}
 
-		buf.WriteString(line)
-		buf.WriteByte('\n')
-		source := buf.String()
-
-		// Detect incomplete input: if the line ends with ':' or the buffer
-		// has unclosed brackets, wait for more input.
-		if isIncomplete(source) {
+		if inBlock {
+			// Inside a compound statement: a blank line ends it; otherwise keep
+			// accumulating.
+			if trimmed == "" {
+				flush()
+				continue
+			}
+			buf.WriteString(line)
+			buf.WriteByte('\n')
 			prompt = "... "
 			continue
 		}
 
-		// Execute the accumulated source.
-		prompt = ">>> "
-		src := buf.String()
-		buf.Reset()
+		buf.WriteString(line)
+		buf.WriteByte('\n')
 
-		if strings.TrimSpace(src) == "" {
+		if opensBlock(line) || unclosedBrackets(buf.String()) {
+			inBlock = true
+			prompt = "... "
 			continue
 		}
 
-		// Try to evaluate as an expression first (for REPL result display).
-		// If that fails, run as a statement.
-		result, evalErr := rt.Eval(strings.TrimSpace(src))
-		if evalErr == nil && result != nil && !result.IsNone() {
-			fmt.Println(result.Repr())
-			continue
-		}
-
-		if err := rt.RunString(src); err != nil {
-			if pyErr := pygo.AsError(err); pyErr != nil {
-				fmt.Fprint(os.Stderr, pyErr.Format())
-			} else {
-				fmt.Fprintln(os.Stderr, err)
-			}
-		}
+		flush()
 	}
 
 	return 0
 }
 
-// isIncomplete reports whether source is an incomplete Python statement that
-// needs more input. This is a simplified heuristic; Phase 6 will use the
-// parser's ParseIncomplete result for accurate detection.
-func isIncomplete(source string) bool {
-	lines := strings.Split(strings.TrimRight(source, "\n"), "\n")
-	if len(lines) == 0 {
-		return false
+// runREPLChunk evaluates a complete source chunk, printing an expression
+// result when applicable and reporting errors.
+func runREPLChunk(rt *pygo.Runtime, src string) {
+	// Single-line expressions get their repr printed (CPython REPL behavior).
+	if !strings.ContainsRune(strings.TrimRight(src, "\n"), '\n') {
+		if result, err := rt.Eval(strings.TrimSpace(src)); err == nil {
+			if result != nil && !result.IsNone() {
+				fmt.Println(result.Repr())
+			}
+			return
+		}
 	}
-	last := strings.TrimRight(lines[len(lines)-1], " \t")
-
-	// A line ending with ':' opens a block.
-	if strings.HasSuffix(last, ":") {
-		return true
+	if err := rt.RunString(src); err != nil {
+		if pyErr := pygo.AsError(err); pyErr != nil {
+			fmt.Fprint(os.Stderr, pyErr.Format())
+		} else {
+			fmt.Fprintln(os.Stderr, err)
+		}
 	}
+}
 
-	// Unclosed brackets/parens/braces anywhere in the buffer.
+// opensBlock reports whether a line opens a compound statement (ends with ':').
+func opensBlock(line string) bool {
+	s := strings.TrimRight(line, " \t")
+	// Ignore trailing comments for this check.
+	if i := strings.IndexByte(s, '#'); i >= 0 {
+		s = strings.TrimRight(s[:i], " \t")
+	}
+	return strings.HasSuffix(s, ":")
+}
+
+// unclosedBrackets reports whether the source has unbalanced (), [], or {}.
+func unclosedBrackets(source string) bool {
 	depth := 0
 	for _, ch := range source {
 		switch ch {
@@ -108,15 +126,5 @@ func isIncomplete(source string) bool {
 			depth--
 		}
 	}
-	if depth > 0 {
-		return true
-	}
-
-	// A non-empty continuation block: if we already have indented lines and
-	// the last line is non-empty, we may still be inside a block.
-	if len(lines) > 1 && last != "" && (strings.HasPrefix(last, " ") || strings.HasPrefix(last, "\t")) {
-		return true
-	}
-
-	return false
+	return depth > 0
 }

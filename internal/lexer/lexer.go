@@ -42,6 +42,10 @@ type Lexer struct {
 	// done is true after the EOF token has been emitted.
 	done bool
 
+	// lastWasNewline records whether the most recently produced non-pending
+	// token was a NEWLINE, so emitEOF can decide whether to synthesize one.
+	lastWasNewline bool
+
 	errors []LexError
 }
 
@@ -78,12 +82,24 @@ func (l *Lexer) Errors() []LexError {
 // Next returns the next token from the source.
 // After EOF is returned, all subsequent calls also return EOF.
 func (l *Lexer) Next() Token {
-	for len(l.pending) > 0 {
-		tok := l.pending[0]
+	var tok Token
+	if len(l.pending) > 0 {
+		tok = l.pending[0]
 		l.pending = l.pending[1:]
-		return tok
+	} else {
+		tok = l.scan()
 	}
-	return l.scan()
+	// Track whether we just produced a NEWLINE (ignoring the synthetic tokens
+	// that may follow) so emitEOF can avoid a duplicate terminator.
+	switch tok.Type {
+	case NEWLINE:
+		l.lastWasNewline = true
+	case INDENT, DEDENT, EOF:
+		// leave lastWasNewline unchanged
+	default:
+		l.lastWasNewline = false
+	}
+	return tok
 }
 
 // Peek returns the next token without consuming it.
@@ -186,15 +202,24 @@ func (l *Lexer) scanIndent() Token {
 		return l.makeToken(INDENT, "")
 
 	case indent < current:
-		// Pop indent levels and queue DEDENT tokens.
+		// Pop indent levels, emitting one DEDENT per level. Return the first
+		// DEDENT now and queue the rest so ordering is preserved (DEDENTs must
+		// precede the next real token).
+		var dedents int
 		for len(l.indentStack) > 1 && l.indentStack[len(l.indentStack)-1] > indent {
 			l.indentStack = l.indentStack[:len(l.indentStack)-1]
-			l.pending = append(l.pending, l.makeToken(DEDENT, ""))
+			dedents++
 		}
 		if l.indentStack[len(l.indentStack)-1] != indent {
 			l.addError("unindent does not match any outer indentation level")
 		}
-		return l.scan()
+		// The current line still needs to be tokenized after the DEDENTs, so
+		// re-enter indent handling is unnecessary; just emit DEDENT tokens and
+		// let the normal scan continue from the current position.
+		for i := 1; i < dedents; i++ {
+			l.pending = append(l.pending, l.makeToken(DEDENT, ""))
+		}
+		return l.makeToken(DEDENT, "")
 
 	default:
 		// Same indent level — no INDENT/DEDENT needed.
@@ -223,15 +248,28 @@ func (l *Lexer) scanNewline() Token {
 	return l.makeToken(NEWLINE, "\n")
 }
 
-// emitEOF emits the EOF token and any pending DEDENTs to close open blocks.
+// emitEOF emits the closing token sequence at end of input: a final NEWLINE
+// (if the last logical line was not already terminated), one DEDENT per open
+// indentation level, and finally EOF.
 func (l *Lexer) emitEOF() Token {
-	if len(l.indentStack) > 1 {
-		l.indentStack = l.indentStack[:len(l.indentStack)-1]
-		l.pending = append(l.pending, l.makeToken(EOF, ""))
-		return l.makeToken(DEDENT, "")
-	}
 	l.done = true
-	return l.makeToken(EOF, "")
+
+	var seq []Token
+
+	// Terminate the final logical line if needed.
+	if !l.lastWasNewline {
+		seq = append(seq, l.makeToken(NEWLINE, "\n"))
+	}
+	// Close all open indentation levels.
+	for len(l.indentStack) > 1 {
+		l.indentStack = l.indentStack[:len(l.indentStack)-1]
+		seq = append(seq, l.makeToken(DEDENT, ""))
+	}
+	seq = append(seq, l.makeToken(EOF, ""))
+
+	first := seq[0]
+	l.pending = append(l.pending, seq[1:]...)
+	return first
 }
 
 // scanString scans a string literal (all flavors: raw, bytes, f-string,

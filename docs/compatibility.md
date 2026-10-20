@@ -10,6 +10,43 @@ This means:
 - Divergences from CPython are acceptable when documented.
 - Compatibility is measured by tests, not claimed by assertion.
 
+## Implemented so far (verified by tests)
+
+As of the current build, the following work end-to-end and are covered by the
+test suite:
+
+- **Core language:** variables, arithmetic (arbitrary-precision int, correct
+  floor-div/modulo), comparisons incl. chained, boolean short-circuit,
+  `if`/`elif`/`else`, `while`, `for` (+`break`/`continue`), functions with
+  defaults/`*args`/`**kwargs`, closures (`nonlocal`), recursion, `lambda`,
+  `try`/`except`/`finally`, `raise`, `assert`, tuple unpacking.
+- **Data types:** `int`, `float`, `bool`, `None`, `str`, `list`, `tuple`,
+  `dict`, `set`; indexing and slicing (incl. negative step); membership.
+- **Strings:** ~20 methods (`upper`/`split`/`join`/`replace`/`format`/…),
+  f-strings (interpolation, nested expressions, `{{`/`}}`), escapes,
+  triple-quotes, iteration.
+- **Comprehensions:** list/set/dict comprehensions and generator expressions.
+- **Generators:** `yield` with real frame suspension/resumption.
+- **Classes:** definition, `__init__`, methods, single/multiple inheritance
+  (C3 MRO), bound methods.
+- **Builtins:** `print`, `len`, `range`, `abs`, `round`, `min`, `max`, `sum`,
+  `sorted`, `reversed`, `any`, `all`, `enumerate`, `repr`, `str`, `int`,
+  `float`, `bool`, `list`, `tuple`, `type`, `isinstance`, `chr`, `ord`.
+- **Imports / stdlib:** `import`, `from … import`, `import … as`, module
+  caching, user `.py` modules on the search path, host-registered modules, and
+  the `math`, `json`, `random`, `sys`, `string`, `functools`, `itertools`
+  built-in modules.
+- **Embedding:** `RunString`/`Eval`/`Set`/`Get`, `RegisterFunction`/`Register`
+  (structs, methods, Go error → Python exception), `CallByName`.
+- **CLI:** `pygo script.py`, `pygo -c`, and an interactive REPL.
+
+Not yet implemented: lazy generator expressions, `.send()`/`throw()`, keyword
+fields in `str.format()`, a distinct `bytes` type, `@property`/descriptors,
+`with`-statement exception safety, `match`, async/await, and most of the
+remaining standard library.
+
+---
+
 This document categorizes every significant Python 3 language and runtime feature by implementation phase. Each feature's status is one of:
 
 | Status | Meaning |

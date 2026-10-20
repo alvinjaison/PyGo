@@ -20,9 +20,14 @@ func (r *Runtime) installBuiltins() {
 	reg("len", biLen)
 	reg("range", biRange)
 	reg("abs", biAbs)
+	reg("round", biRound)
 	reg("min", biMin)
 	reg("max", biMax)
 	reg("sum", biSum)
+	reg("sorted", biSorted)
+	reg("reversed", biReversed)
+	reg("any", biAny)
+	reg("all", biAll)
 	reg("repr", biRepr)
 	reg("str", biStr)
 	reg("int", biInt)
@@ -385,4 +390,140 @@ func iterateAll(o object.Object) ([]object.Object, error) {
 		items = append(items, v)
 	}
 	return items, nil
+}
+
+// round(x[, ndigits]) rounds to the nearest value, or to ndigits decimals.
+func biRound(args []object.Object, _ map[string]object.Object) (object.Object, error) {
+	if len(args) == 0 {
+		return nil, object.NewTypeError("round() missing required argument")
+	}
+	ndigits := 0
+	haveND := len(args) > 1
+	if haveND {
+		if n, ok := args[1].(*object.IntObject); ok {
+			v, _ := n.Int64()
+			ndigits = int(v)
+		}
+	}
+	switch v := args[0].(type) {
+	case *object.IntObject:
+		return v, nil
+	case *object.FloatObject:
+		f := v.Value
+		pow := 1.0
+		for i := 0; i < absInt(ndigits); i++ {
+			pow *= 10
+		}
+		if ndigits < 0 {
+			pow = 1 / pow
+		}
+		rounded := bankersRound(f*pow) / pow
+		if !haveND {
+			return object.IntFrom(int64(rounded)), nil
+		}
+		return object.FloatFrom(rounded), nil
+	}
+	return nil, object.NewTypeError("type %s doesn't define __round__", args[0].Type().Name())
+}
+
+// bankersRound implements round-half-to-even (Python's rounding mode).
+func bankersRound(x float64) float64 {
+	floor := float64(int64(x))
+	diff := x - floor
+	switch {
+	case diff > 0.5:
+		return floor + 1
+	case diff < 0.5:
+		return floor
+	default:
+		// exactly .5 → round to even
+		if int64(floor)%2 == 0 {
+			return floor
+		}
+		return floor + 1
+	}
+}
+
+func absInt(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
+}
+
+func biSorted(args []object.Object, _ map[string]object.Object) (object.Object, error) {
+	if len(args) == 0 {
+		return nil, object.NewTypeError("sorted expected 1 argument")
+	}
+	items, err := iterateAll(args[0])
+	if err != nil {
+		return nil, err
+	}
+	// Copy so we don't mutate the source.
+	out := append([]object.Object{}, items...)
+	var sortErr error
+	sortStable(out, func(a, b object.Object) bool {
+		res, err := object.CompareObjects(a, b, cmpToBytecode(object.OpLt))
+		if err != nil {
+			sortErr = err
+			return false
+		}
+		t, _ := object.IsTruthy(res)
+		return t
+	})
+	if sortErr != nil {
+		return nil, sortErr
+	}
+	return object.NewList(out), nil
+}
+
+func biReversed(args []object.Object, _ map[string]object.Object) (object.Object, error) {
+	items, err := iterateAll(args[0])
+	if err != nil {
+		return nil, err
+	}
+	out := make([]object.Object, len(items))
+	for i, it := range items {
+		out[len(items)-1-i] = it
+	}
+	return object.NewList(out), nil
+}
+
+func biAny(args []object.Object, _ map[string]object.Object) (object.Object, error) {
+	items, err := iterateAll(args[0])
+	if err != nil {
+		return nil, err
+	}
+	for _, it := range items {
+		if t, _ := object.IsTruthy(it); t {
+			return object.PyTrue, nil
+		}
+	}
+	return object.PyFalse, nil
+}
+
+func biAll(args []object.Object, _ map[string]object.Object) (object.Object, error) {
+	items, err := iterateAll(args[0])
+	if err != nil {
+		return nil, err
+	}
+	for _, it := range items {
+		if t, _ := object.IsTruthy(it); !t {
+			return object.PyFalse, nil
+		}
+	}
+	return object.PyTrue, nil
+}
+
+// sortStable is a simple insertion sort (stable) over Objects using less.
+func sortStable(items []object.Object, less func(a, b object.Object) bool) {
+	for i := 1; i < len(items); i++ {
+		key := items[i]
+		j := i - 1
+		for j >= 0 && less(key, items[j]) {
+			items[j+1] = items[j]
+			j--
+		}
+		items[j+1] = key
+	}
 }

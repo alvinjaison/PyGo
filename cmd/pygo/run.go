@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/pygo/pygo/pygo"
@@ -11,6 +12,11 @@ import (
 
 // runScript executes a .py file and returns the process exit code.
 func runScript(cfg *config) int {
+	// A script's own directory is implicitly on the module search path, so a
+	// script can import sibling modules (matching CPython behavior).
+	scriptDir := filepath.Dir(cfg.script)
+	cfg.searchPath = append([]string{scriptDir}, cfg.searchPath...)
+
 	rt := buildRuntime(cfg)
 	ctx := buildContext(cfg)
 

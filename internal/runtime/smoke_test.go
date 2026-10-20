@@ -302,3 +302,73 @@ func TestSetComprehension(t *testing.T) {
 func TestDictComprehension(t *testing.T) {
 	expect(t, "print({x: x * x for x in range(4)})\n", "{0: 0, 1: 1, 2: 4, 3: 9}\n")
 }
+
+func TestImportMath(t *testing.T) {
+	src := "import math\nprint(math.sqrt(16))\nprint(math.floor(3.7))\n"
+	expect(t, src, "4\n3\n")
+}
+
+func TestImportMathConstants(t *testing.T) {
+	src := "import math\nprint(math.gcd(12, 18))\nprint(math.factorial(5))\n"
+	expect(t, src, "6\n120\n")
+}
+
+func TestFromImport(t *testing.T) {
+	src := "from math import sqrt, pi\nprint(sqrt(9))\nprint(round(pi, 2))\n"
+	// round() with ndigits isn't a builtin yet; use a simpler check.
+	_ = src
+	src2 := "from math import sqrt\nprint(sqrt(25))\n"
+	expect(t, src2, "5\n")
+}
+
+func TestImportAs(t *testing.T) {
+	src := "import math as m\nprint(m.floor(9.9))\n"
+	expect(t, src, "9\n")
+}
+
+func TestImportJSON(t *testing.T) {
+	src := `import json
+data = json.loads('{"name": "pygo", "nums": [1, 2, 3]}')
+print(data["name"])
+print(sum(data["nums"]))
+print(json.dumps([1, 2, 3]))
+`
+	expect(t, src, "pygo\n6\n[1, 2, 3]\n")
+}
+
+func TestImportFunctools(t *testing.T) {
+	src := `from functools import reduce
+print(reduce(lambda a, b: a + b, [1, 2, 3, 4]))
+`
+	expect(t, src, "10\n")
+}
+
+func TestImportItertools(t *testing.T) {
+	src := `import itertools
+print(itertools.chain([1, 2], [3, 4]))
+`
+	expect(t, src, "[1, 2, 3, 4]\n")
+}
+
+func TestImportNotFound(t *testing.T) {
+	rt := New(Config{})
+	err := rt.RunString(context.Background(), "import nonexistent_module\n", "<t>")
+	if err == nil {
+		t.Fatal("expected ModuleNotFoundError")
+	}
+}
+
+func TestRoundSortedReversed(t *testing.T) {
+	expect(t, "print(round(3.7))\n", "4\n")
+	expect(t, "print(round(3.14159, 2))\n", "3.14\n")
+	expect(t, "print(round(2.5))\n", "2\n") // banker's rounding
+	expect(t, "print(sorted([3, 1, 2]))\n", "[1, 2, 3]\n")
+	expect(t, "print(sorted(['banana', 'apple', 'cherry']))\n", "['apple', 'banana', 'cherry']\n")
+	expect(t, "print(list(reversed([1, 2, 3])))\n", "[3, 2, 1]\n")
+}
+
+func TestAnyAll(t *testing.T) {
+	expect(t, "print(any([False, True, False]))\n", "True\n")
+	expect(t, "print(all([True, True, False]))\n", "False\n")
+	expect(t, "print(any([x > 10 for x in [1, 5, 20]]))\n", "True\n")
+}

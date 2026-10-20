@@ -13,6 +13,7 @@ import (
 
 	"github.com/pygo/pygo/internal/bytecode"
 	"github.com/pygo/pygo/internal/compiler"
+	"github.com/pygo/pygo/internal/importer"
 	"github.com/pygo/pygo/internal/object"
 	"github.com/pygo/pygo/internal/parser"
 	"github.com/pygo/pygo/internal/vm"
@@ -35,6 +36,7 @@ type Runtime struct {
 	builtins *object.DictObject
 	modules  map[string]*object.ModuleObject
 	stdout   io.Writer
+	importer *importer.Importer
 }
 
 // New creates and initializes a Runtime.
@@ -59,7 +61,64 @@ func New(cfg Config) *Runtime {
 	// Expose the builtins dict under __builtins__ for completeness.
 	_ = r.globals.SetItem(object.StrFrom("__builtins__"), r.builtins)
 	_ = r.globals.SetItem(object.StrFrom("__name__"), object.StrFrom("__main__"))
+
+	// Set up the module importer (disabled in restricted mode).
+	if !cfg.Restricted {
+		r.importer = importer.New(cfg.SearchPath, r)
+	}
+
+	// Install the global callable-invocation hook so stdlib/interop code can
+	// call Python callables (including user functions) through the VM.
+	object.SetInvoker(func(callable object.Object, args []object.Object) (object.Object, error) {
+		return r.Call(context.Background(), callable, args)
+	})
+
 	return r
+}
+
+// newVM constructs a VM wired with this runtime's importer.
+func (r *Runtime) newVM(ctx context.Context) *vm.VM {
+	machine := vm.New(ctx, r.cfg.MaxCallDepth)
+	if r.importer != nil {
+		machine.SetImporter(importerAdapter{r.importer})
+	}
+	return machine
+}
+
+// importerAdapter adapts *importer.Importer to the vm.Importer interface
+// (widening the concrete return type to object.Object).
+type importerAdapter struct{ im *importer.Importer }
+
+func (a importerAdapter) Import(name string) (object.Object, error) {
+	mod, err := a.im.Import(name)
+	if err != nil {
+		return nil, err
+	}
+	return mod, nil
+}
+
+// RegisterModule registers a pre-built module so it is both bound in globals
+// and importable by name via the import system.
+func (r *Runtime) RegisterModule(mod *object.ModuleObject) {
+	r.Set(mod.Name, mod)
+	if r.importer != nil {
+		r.importer.Cache()[mod.Name] = mod
+	}
+}
+
+// ExecModule compiles and runs module source in the module's namespace,
+// satisfying importer.Execer.
+func (r *Runtime) ExecModule(mod *object.ModuleObject, source, filename string) error {
+	code, err := r.compile(source, filename)
+	if err != nil {
+		return err
+	}
+	machine := r.newVM(context.Background())
+	// The module's globals are its own dict, so top-level assignments populate
+	// the module namespace.
+	frame := vm.NewFrame(code, mod.Dict, r.builtins, nil)
+	_, err = machine.Run(frame)
+	return err
 }
 
 // Globals returns the runtime's global namespace.
@@ -74,7 +133,7 @@ func (r *Runtime) RunString(ctx context.Context, source, filename string) error 
 	if err != nil {
 		return err
 	}
-	machine := vm.New(ctx, r.cfg.MaxCallDepth)
+	machine := r.newVM(ctx)
 	frame := vm.NewFrame(code, r.globals, r.builtins, nil)
 	_, err = machine.Run(frame)
 	return err
@@ -100,7 +159,7 @@ func (r *Runtime) Eval(ctx context.Context, exprSrc string) (object.Object, erro
 	if cerr != nil {
 		return nil, cerr
 	}
-	machine := vm.New(ctx, r.cfg.MaxCallDepth)
+	machine := r.newVM(ctx)
 	frame := vm.NewFrame(code, r.globals, r.builtins, nil)
 	return machine.Run(frame)
 }
@@ -126,7 +185,7 @@ func (r *Runtime) Delete(name string) {
 
 // Call invokes a callable Python object from Go.
 func (r *Runtime) Call(ctx context.Context, callable object.Object, args []object.Object) (object.Object, error) {
-	machine := vm.New(ctx, r.cfg.MaxCallDepth)
+	machine := r.newVM(ctx)
 	return machine.CallExternal(callable, args, r.globals, r.builtins)
 }
 

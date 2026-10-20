@@ -32,7 +32,20 @@ type VM struct {
 
 	// maxInstr is the instruction execution limit (0 = unlimited).
 	maxInstr int64
+
+	// importer resolves modules for IMPORT_NAME / IMPORT_FROM. It is optional;
+	// when nil, import statements raise ImportError.
+	importer Importer
 }
+
+// Importer resolves a module name to a module object. The runtime supplies an
+// implementation; the VM calls it to execute import statements.
+type Importer interface {
+	Import(name string) (object.Object, error)
+}
+
+// SetImporter installs the module importer used by import statements.
+func (v *VM) SetImporter(im Importer) { v.importer = im }
 
 // New creates a new VM with the given options.
 func New(ctx context.Context, maxDepth int) *VM {
@@ -818,15 +831,33 @@ func (v *VM) execute(f *Frame, instr bytecode.Instruction) (object.Object, error
 	// ---- Import ----
 
 	case bytecode.IMPORT_NAME:
-		// TODO(Phase 2): Implement full import system.
 		name := f.Code.Names[instr.Arg]
-		return nil, fmt.Errorf("ImportError: No module named '%s' (import system not yet implemented)", name)
+		if v.importer == nil {
+			return nil, object.NewException(object.TypeImportError,
+				"import is not available in this runtime")
+		}
+		mod, err := v.importer.Import(name)
+		if err != nil {
+			return nil, err
+		}
+		f.Push(mod)
 
 	case bytecode.IMPORT_FROM:
-		// TODO(Phase 2): Implement import from.
+		// TOS is the module; read an attribute off it, leaving the module in
+		// place (the compiler pops it afterward).
 		name := f.Code.Names[instr.Arg]
-		_ = name
-		return nil, fmt.Errorf("import from not yet implemented")
+		mod := f.Peek()
+		holder, ok := mod.(object.AttributeHolder)
+		if !ok {
+			return nil, object.NewException(object.TypeImportError,
+				"cannot import name '"+name+"'")
+		}
+		val, err := holder.GetAttr(name)
+		if err != nil {
+			return nil, object.NewException(object.TypeImportError,
+				"cannot import name '"+name+"'")
+		}
+		f.Push(val)
 
 	// ---- Generator ----
 

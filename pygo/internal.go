@@ -130,7 +130,7 @@ func (r *internalRuntime) registerModule(name string, attrs map[string]interface
 			return err
 		}
 	}
-	r.rt.Set(name, mod)
+	r.rt.RegisterModule(mod)
 	return nil
 }
 

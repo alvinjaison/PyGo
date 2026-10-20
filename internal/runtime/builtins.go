@@ -35,6 +35,7 @@ func (r *Runtime) installBuiltins() {
 	reg("bool", biBool)
 	reg("list", biList)
 	reg("tuple", biTuple)
+	reg("bytes", biBytes)
 	reg("type", biType)
 	reg("isinstance", biIsInstance)
 	reg("chr", biChr)
@@ -717,5 +718,52 @@ func biSuper(args []object.Object, _ map[string]object.Object) (object.Object, e
 		return object.NewSuper(cls, args[1], args[1].Type()), nil
 	default:
 		return nil, object.NewTypeError("super() takes 0 or 2 arguments")
+	}
+}
+
+// bytes(...) constructs a bytes object:
+//   bytes()                     -> empty
+//   bytes(int)                  -> that many zero bytes
+//   bytes(str, encoding)        -> encoded (UTF-8 only)
+//   bytes(iterable_of_ints)     -> those byte values
+//   bytes(bytes)                -> a copy
+func biBytes(args []object.Object, _ map[string]object.Object) (object.Object, error) {
+	if len(args) == 0 {
+		return object.NewBytes(nil), nil
+	}
+	switch v := args[0].(type) {
+	case *object.BytesObject:
+		return object.NewBytes(v.Value), nil
+	case *object.IntObject:
+		n, _ := v.Int64()
+		if n < 0 {
+			return nil, object.NewValueError("negative count")
+		}
+		return object.NewBytes(make([]byte, n)), nil
+	case *object.StrObject:
+		// Requires an encoding argument, matching Python.
+		if len(args) < 2 {
+			return nil, object.NewTypeError("string argument without an encoding")
+		}
+		return object.BytesFromString(v.Value), nil
+	default:
+		// Iterable of ints.
+		items, err := iterateAll(args[0])
+		if err != nil {
+			return nil, object.NewTypeError("cannot convert '%s' object to bytes", args[0].Type().Name())
+		}
+		out := make([]byte, len(items))
+		for i, it := range items {
+			n, ok := it.(*object.IntObject)
+			if !ok {
+				return nil, object.NewTypeError("'%s' object cannot be interpreted as an integer", it.Type().Name())
+			}
+			iv, _ := n.Int64()
+			if iv < 0 || iv > 255 {
+				return nil, object.NewValueError("bytes must be in range(0, 256)")
+			}
+			out[i] = byte(iv)
+		}
+		return object.NewBytes(out), nil
 	}
 }

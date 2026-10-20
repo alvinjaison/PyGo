@@ -619,3 +619,4 @@ func SetPos[T Node](node T, p Position) T {
 func NewArg(name string, annotation Expr, p Position) *Arg {
 	return &Arg{Arg: name, Annotation: annotation, pos: p}
 }
+

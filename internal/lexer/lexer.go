@@ -322,6 +322,18 @@ func (l *Lexer) scanString() Token {
 		// Escape sequences (unless a raw string).
 		if ch == '\\' && !raw && l.pos+1 < len(l.src) {
 			l.advance()
+			// Hex escape: \xNN
+			if l.src[l.pos] == 'x' && l.pos+2 < len(l.src) {
+				hi := hexVal(l.src[l.pos+1])
+				lo := hexVal(l.src[l.pos+2])
+				if hi >= 0 && lo >= 0 {
+					sb.WriteByte(byte(hi*16 + lo))
+					l.advance() // x
+					l.advance() // hi
+					l.advance() // lo
+					continue
+				}
+			}
 			sb.WriteString(decodeEscape(l.src[l.pos]))
 			l.advance()
 			continue
@@ -380,6 +392,19 @@ func decodeEscape(c rune) string {
 		return "" // line continuation inside a string
 	}
 	return "\\" + string(c)
+}
+
+// hexVal returns the value of a hex digit, or -1 if not a hex digit.
+func hexVal(r rune) int {
+	switch {
+	case r >= '0' && r <= '9':
+		return int(r - '0')
+	case r >= 'a' && r <= 'f':
+		return int(r-'a') + 10
+	case r >= 'A' && r <= 'F':
+		return int(r-'A') + 10
+	}
+	return -1
 }
 
 // scanNumber scans an integer or float literal.

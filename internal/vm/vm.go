@@ -1167,6 +1167,8 @@ func constantToObject(c interface{}) object.Object {
 		return object.StrFrom(v)
 	case *big.Int:
 		return object.IntFromBig(v)
+	case *bytecode.BytesConstant:
+		return object.NewBytes(v.Data)
 	case *bytecode.Code:
 		return &codeConstant{code: v}
 	}

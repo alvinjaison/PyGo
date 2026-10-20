@@ -137,3 +137,51 @@ func TestPublicListResult(t *testing.T) {
 		}
 	}
 }
+
+func TestPublicBytesRoundTrip(t *testing.T) {
+	rt := pygo.New()
+	// Go []byte -> Python bytes.
+	if err := rt.Set("data", []byte{1, 2, 3}); err != nil {
+		t.Fatal(err)
+	}
+	v, err := rt.Eval("len(data)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, _ := v.Int()
+	if n != 3 {
+		t.Errorf("got len %d want 3", n)
+	}
+	// Python bytes -> Go []byte.
+	result, err := rt.Eval("b'hello'")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := result.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != "hello" {
+		t.Errorf("got %q want hello", string(b))
+	}
+}
+
+func TestPublicGoFuncBytes(t *testing.T) {
+	rt := pygo.New()
+	// A Go function taking []byte and returning []byte.
+	rt.MustRegisterFunction("reverse", func(b []byte) []byte {
+		out := make([]byte, len(b))
+		for i := range b {
+			out[len(b)-1-i] = b[i]
+		}
+		return out
+	})
+	v, err := rt.Eval("reverse(b'abc')")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := v.Bytes()
+	if string(b) != "cba" {
+		t.Errorf("got %q want cba", string(b))
+	}
+}

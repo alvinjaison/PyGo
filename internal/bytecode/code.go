@@ -128,3 +128,7 @@ func (c *Code) IsGenerator() bool { return c.HasFlag(FlagGenerator) }
 
 // IsCoroutine reports whether this code object is a coroutine function.
 func (c *Code) IsCoroutine() bool { return c.HasFlag(FlagCoroutine) }
+
+// BytesConstant wraps raw bytes stored in a Code object's constant pool, so
+// the VM materializes a bytes object (not a string) for b'...' literals.
+type BytesConstant struct{ Data []byte }

@@ -20,8 +20,13 @@ test suite:
   `if`/`elif`/`else`, `while`, `for` (+`break`/`continue`), functions with
   defaults/`*args`/`**kwargs`, closures (`nonlocal`), recursion, `lambda`,
   `try`/`except`/`finally`, `raise`, `assert`, tuple unpacking.
-- **Data types:** `int`, `float`, `bool`, `None`, `str`, `list`, `tuple`,
-  `dict`, `set`; indexing and slicing (incl. negative step); membership.
+- **Data types:** `int`, `float`, `bool`, `None`, `str`, `bytes`, `list`,
+  `tuple`, `dict`, `set`; indexing and slicing (incl. negative step);
+  membership.
+- **bytes:** `b'...'` literals with `\xNN` escapes, indexing (→ int), slicing
+  (→ bytes), iteration (→ ints), concat/repeat, comparison, membership, use as
+  dict keys, methods (decode/hex/upper/lower/split/replace/startswith/
+  endswith), the `bytes()` constructor, and `str.encode()`.
 - **Strings:** ~20 methods (`upper`/`split`/`join`/`replace`/`format`/…),
   f-strings (interpolation, nested expressions, `{{`/`}}`), escapes,
   triple-quotes, iteration.
@@ -65,9 +70,8 @@ test suite:
   MRO (including diamond inheritance).
 
 Not yet implemented: lazy generator expressions, `.send()`/`throw()`, keyword
-fields in `str.format()`, a distinct `bytes` type, custom descriptors
-(`__get__`/`__set__`), metaclasses, `match`, async/await, and most of the
-remaining standard library.
+fields in `str.format()`, `bytearray`, custom descriptors (`__get__`/`__set__`),
+metaclasses, `match`, async/await, and most of the remaining standard library.
 
 ---
 
@@ -94,7 +98,7 @@ This document categorizes every significant Python 3 language and runtime featur
 | `None` | MVP | Singleton |
 | `str` (Unicode, immutable) | MVP | Go `string` (UTF-8) |
 | `str` indexing → Unicode codepoints | MVP | Not bytes |
-| `bytes` (immutable byte sequence) | Post-MVP | |
+| `bytes` (immutable byte sequence) | **Implemented** | literals, indexing/slicing, methods, bytes() |
 | `bytearray` (mutable bytes) | Future | |
 | `complex` | Future | |
 | `memoryview` | Not Planned | Requires buffer protocol |
@@ -315,7 +319,7 @@ This document categorizes every significant Python 3 language and runtime featur
 | `chr()`, `ord()` | Post-MVP | |
 | `hex()`, `oct()`, `bin()` | Post-MVP | |
 | `format()` | Post-MVP | |
-| `bytes()`, `bytearray()` | Future | |
+| `bytes()` | **Implemented** | `bytearray()` not yet |
 | `memoryview()` | Not Planned | |
 | `frozenset()` | Future | |
 | `slice()` | Future | |
@@ -336,10 +340,10 @@ This document categorizes every significant Python 3 language and runtime featur
 | f-strings (conversion flags `!r`, `!s`, `!a`) | Post-MVP | |
 | f-strings (format spec `:.2f`) | Post-MVP | |
 | Raw strings (`r"..."`) | MVP | |
-| Byte strings (`b"..."`) | Post-MVP | |
+| Byte strings (`b"..."`) | **Implemented** | incl. `\xNN` escapes |
 | String formatting (`.format()`) | Post-MVP | |
 | `%` formatting | Future | Legacy but common |
-| `str.encode()` / `bytes.decode()` | Future | Encoding support |
+| `str.encode()` / `bytes.decode()` | **Implemented** | UTF-8 only |
 | Unicode normalization | Not Planned | |
 
 ---

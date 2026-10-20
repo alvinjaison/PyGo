@@ -71,7 +71,7 @@ func goToPython(v interface{}) (object.Object, error) {
 	case string:
 		return object.StrFrom(x), nil
 	case []byte:
-		return object.StrFrom(string(x)), nil
+		return object.NewBytes(x), nil
 	}
 
 	// Reflection-based conversion for slices, maps, pointers, structs.
@@ -163,6 +163,14 @@ func pythonToGo(o object.Object, target reflect.Type) (reflect.Value, error) {
 		}
 		return reflect.ValueOf(s.Value), nil
 	case reflect.Slice:
+		// Fast path: a []byte target from a Python bytes value.
+		if target.Elem().Kind() == reflect.Uint8 {
+			if b, ok := o.(*object.BytesObject); ok {
+				cp := make([]byte, len(b.Value))
+				copy(cp, b.Value)
+				return reflect.ValueOf(cp), nil
+			}
+		}
 		items, err := iterate(o)
 		if err != nil {
 			return reflect.Value{}, err
@@ -195,6 +203,8 @@ func pythonToGoNatural(o object.Object) interface{} {
 	case *object.FloatObject:
 		return x.Value
 	case *object.StrObject:
+		return x.Value
+	case *object.BytesObject:
 		return x.Value
 	case *object.ListObject:
 		out := make([]interface{}, len(x.Items))

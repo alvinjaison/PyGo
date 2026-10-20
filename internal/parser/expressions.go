@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/pygo/pygo/internal/ast"
+	"github.com/pygo/pygo/internal/bytecode"
 	"github.com/pygo/pygo/internal/lexer"
 )
 
@@ -377,10 +378,13 @@ func (p *Parser) parseAtom() ast.Expr {
 	case lexer.STRING:
 		return p.parseStringConcat()
 	case lexer.BYTES:
-		tok := p.advance()
-		// Bytes are represented as their string content for now (Phase 2+ will
-		// add a dedicated bytes type end-to-end).
-		return ast.SetPos(&ast.Constant{Value: tok.Value}, pos)
+		// Adjacent bytes literals concatenate; carry the raw bytes through the
+		// constant pool as a []byte so the VM builds a BytesObject.
+		var raw []byte
+		for p.check(lexer.BYTES) {
+			raw = append(raw, []byte(p.advance().Value)...)
+		}
+		return ast.SetPos(&ast.Constant{Value: bytesConstant(raw)}, pos)
 	case lexer.NAME:
 		tok := p.advance()
 		return ast.SetPos(&ast.Name{Id: tok.Value, Ctx: ast.Load}, pos)
@@ -408,6 +412,8 @@ func (p *Parser) parseAtom() ast.Expr {
 	p.advance()
 	return ast.SetPos(&ast.Constant{Value: nil}, pos)
 }
+
+func bytesConstant(b []byte) *bytecode.BytesConstant { return &bytecode.BytesConstant{Data: b} }
 
 // parseStringConcat handles implicit adjacent string-literal concatenation,
 // including f-strings. Adjacent literals are joined; if any piece is an

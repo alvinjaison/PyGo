@@ -53,6 +53,9 @@ func (v *valueImpl) Str() (string, error) {
 }
 
 func (v *valueImpl) Bytes() ([]byte, error) {
+	if b, ok := v.obj.(*object.BytesObject); ok {
+		return b.Value, nil
+	}
 	if s, ok := v.obj.(*object.StrObject); ok {
 		return []byte(s.Value), nil
 	}

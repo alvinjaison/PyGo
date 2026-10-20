@@ -246,6 +246,10 @@ var strMethods = map[string]strMethod{
 		}
 		return StrFrom(strings.Repeat("0", n-len(self)) + self), nil
 	},
+	"encode": func(self string, _ []Object) (Object, error) {
+		// UTF-8 encode (the default and only supported codec for now).
+		return BytesFromString(self), nil
+	},
 	"format": strFormat,
 }
 

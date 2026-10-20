@@ -177,8 +177,23 @@ func constEqual(a, b interface{}) bool {
 	case bool:
 		bv, ok := b.(bool)
 		return ok && av == bv
+	case *bytecode.BytesConstant:
+		bv, ok := b.(*bytecode.BytesConstant)
+		return ok && bytesEqual(av.Data, bv.Data)
 	}
 	return false
+}
+
+func bytesEqual(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *compiler) nameIndex(name string) uint32 {

@@ -21,6 +21,7 @@ func installCoreSlots() {
 	installFloatSlots()
 	installStrSlots()
 	installBoolSlots()
+	installBytesSlots()
 }
 
 // ---- helpers to coerce operands ----

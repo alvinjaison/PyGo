@@ -1,22 +1,49 @@
-# Kiro / editor
+# Build output
+# (note: do not ignore bare "/pygo" — that would shadow the pygo/ source package)
+/pygo-bin
+/pygo.bin
+/pygo-*
+/dist/
+/build/
+/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.out
+
+# Go toolchain
+*.test
+*.prof
+*.cover
+coverage.out
+coverage.html
+cpu.out
+mem.out
+go.work
+go.work.sum
+vendor/
+
+# Editor / IDE / tooling
 .kiro/
 .vscode/
 .idea/
 *.swp
+*.swo
+*~
+.project
+.settings/
 
-# Build output
-/pygo
-/dist/
-*.exe
-*.out
+# Logs and temp files
+*.log
+tmp/
+.cache/
 
-# Go
-*.test
-coverage.out
-*.prof
-
-# OS
+# OS files
 .DS_Store
+Thumbs.db
+desktop.ini
 
 # REPL history
 .pygo_history

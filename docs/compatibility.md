@@ -58,10 +58,16 @@ test suite:
   (structs, methods, Go error → Python exception), `CallByName`.
 - **CLI:** `pygo script.py`, `pygo -c`, and an interactive REPL.
 
+- **Context managers:** exception-safe `with` (single and multiple managers)
+  that runs `__enter__`/`__exit__`, propagates or suppresses exceptions based
+  on `__exit__`'s return, and cleans up on early return.
+- **`super()`:** zero-argument and two-argument forms, cooperative through the
+  MRO (including diamond inheritance).
+
 Not yet implemented: lazy generator expressions, `.send()`/`throw()`, keyword
 fields in `str.format()`, a distinct `bytes` type, custom descriptors
-(`__get__`/`__set__`), metaclasses, `with`-statement exception safety, `match`,
-async/await, and most of the remaining standard library.
+(`__get__`/`__set__`), metaclasses, `match`, async/await, and most of the
+remaining standard library.
 
 ---
 
@@ -225,7 +231,7 @@ This document categorizes every significant Python 3 language and runtime featur
 | `__str__`, `__repr__` | Post-MVP | |
 | Single inheritance | Post-MVP | |
 | Multiple inheritance | Post-MVP | Requires C3 MRO |
-| `super()` | Post-MVP | |
+| `super()` | **Implemented** | zero-arg and two-arg, MRO-cooperative |
 | Class attributes | Post-MVP | |
 | Class methods (`@classmethod`) | **Implemented** | |
 | Static methods (`@staticmethod`) | **Implemented** | |
@@ -240,7 +246,7 @@ This document categorizes every significant Python 3 language and runtime featur
 | `__iter__`, `__next__` | **Implemented** | + sequence protocol |
 | `__call__` | **Implemented** | callable instances |
 | `__contains__` | **Implemented** | |
-| `__enter__`, `__exit__` | Future | Context managers |
+| `__enter__`, `__exit__` | **Implemented** | Context managers |
 | `__getattr__`, `__setattr__` | Future | |
 | `__get__`, `__set__` (descriptors) | Complex | |
 | Metaclasses | Complex | |
@@ -302,7 +308,7 @@ This document categorizes every significant Python 3 language and runtime featur
 | `exec()`, `eval()` | Future | Dynamic execution |
 | `compile()` | Future | |
 | `globals()`, `locals()` | Future | |
-| `super()` | Post-MVP | |
+| `super()` | **Implemented** | |
 | `object()` | Post-MVP | |
 | `staticmethod()`, `classmethod()` | **Implemented** | |
 | `property()` | Future | |
@@ -386,9 +392,9 @@ This document categorizes every significant Python 3 language and runtime featur
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| `with` statement | Future | Phase 3+ |
-| `__enter__` / `__exit__` protocol | Future | |
-| Multiple context managers in one `with` | Future | |
+| `with` statement | **Implemented** | exception-safe; suppression via `__exit__` return |
+| `__enter__` / `__exit__` protocol | **Implemented** | |
+| Multiple context managers in one `with` | **Implemented** | nested enter/exit order |
 | `contextlib.contextmanager` | Future | |
 
 ---

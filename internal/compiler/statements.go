@@ -294,20 +294,50 @@ func (c *compiler) compileImportFrom(n *ast.ImportFrom) {
 }
 
 func (c *compiler) compileWith(n *ast.With) {
-	// Minimal with: evaluate context managers, call __enter__, bind, run body,
-	// call __exit__. Full exception-safe semantics come in a later phase.
-	for _, item := range n.Items {
-		c.compileExpr(item.ContextExpr)
-		// Call __enter__ via attribute lookup.
-		c.emit(bytecode.LOAD_ATTR, c.nameIndex("__enter__"))
-		c.emit(bytecode.CALL_FUNCTION, 0)
-		if item.OptionalVar != nil {
-			c.compileAssignTarget(item.OptionalVar)
-		} else {
-			c.emit(bytecode.POP_TOP, 0)
-		}
+	c.compileWithItems(n.Items, n.Body)
+}
+
+// compileWithItems compiles a (possibly multi-item) with statement with
+// exception-safe cleanup. Multiple context managers nest left-to-right:
+//
+//	with A as a, B as b: BODY   ≡   with A as a: (with B as b: BODY)
+//
+// Each item emits:
+//
+//	<eval ctx>
+//	SETUP_WITH <cleanup>     # calls __enter__, pushes with-block, pushes result
+//	<bind result to target, or POP_TOP>
+//	... body ...
+//	POP_BLOCK
+//	WITH_CLEANUP             # normal path: __exit__(None, None, None)
+//	JUMP end
+//	cleanup/end:             # exception suppression resumes here (set by unwind)
+func (c *compiler) compileWithItems(items []*ast.WithItem, body []ast.Stmt) {
+	if len(items) == 0 {
+		c.compileBlock(body)
+		return
 	}
-	c.compileBlock(n.Body)
+	item := items[0]
+
+	c.compileExpr(item.ContextExpr)
+	setup := c.emitJump(bytecode.SETUP_WITH) // operand patched to the end offset
+
+	if item.OptionalVar != nil {
+		c.compileAssignTarget(item.OptionalVar)
+	} else {
+		c.emit(bytecode.POP_TOP, 0)
+	}
+
+	// Nested remaining items (or the body for the last item).
+	c.compileWithItems(items[1:], body)
+
+	// Normal completion path.
+	c.emit(bytecode.POP_BLOCK, 0)
+	c.emit(bytecode.WITH_CLEANUP, 0)
+
+	// The with-block's handler/resume point is here (after cleanup). On the
+	// exception-suppressed path, unwind jumps here directly.
+	c.instrs[setup].Arg = uint32(c.here())
 }
 
 // ============================================================

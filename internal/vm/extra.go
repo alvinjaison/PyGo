@@ -145,3 +145,81 @@ func (f *Frame) findDictBelow() *object.DictObject {
 	}
 	return nil
 }
+
+// unwind walks the frame's block stack in response to a raised exception.
+//
+// For a with-block, it invokes the context manager's __exit__(type, exc, tb);
+// if __exit__ returns truthy the exception is suppressed and execution resumes
+// at the block's handler offset. For except/finally blocks it jumps to the
+// handler with the exception pushed onto the stack. It returns (handled,
+// propagate): when handled is true the caller should continue the dispatch
+// loop; otherwise propagate is the exception to raise to the caller.
+func (v *VM) unwind(frame *Frame, exc *object.ExceptionObject) (bool, *object.ExceptionObject) {
+	for len(frame.BlockStack) > 0 {
+		b := frame.BlockStack[len(frame.BlockStack)-1]
+		frame.BlockStack = frame.BlockStack[:len(frame.BlockStack)-1]
+
+		// Restore the value stack to the depth captured when the block opened.
+		for frame.StackTop > b.Level {
+			frame.Pop()
+		}
+
+		switch b.Type {
+		case BlockWith:
+			suppressed, exitErr := v.callExit(frame, b.Mgr, exc)
+			if exitErr != nil {
+				// __exit__ itself raised: that exception replaces the original
+				// and continues unwinding the remaining blocks.
+				exc = exitErr
+				continue
+			}
+			if suppressed {
+				// Exception suppressed by __exit__; resume after the with.
+				frame.PC = b.Handler
+				frame.CurrentException = nil
+				return true, nil
+			}
+			// Not suppressed: keep unwinding with the same exception.
+			continue
+
+		case BlockExcept, BlockFinally:
+			frame.Push(exc)
+			frame.CurrentException = exc
+			frame.PC = b.Handler
+			return true, nil
+		}
+	}
+	return false, exc
+}
+
+// callExit invokes a context manager's __exit__ with exception info and reports
+// whether the exception should be suppressed. On the normal (no-exception)
+// path, pass exc == nil.
+func (v *VM) callExit(frame *Frame, mgr object.Object, exc *object.ExceptionObject) (bool, *object.ExceptionObject) {
+	exit, err := getAttribute(mgr, "__exit__")
+	if err != nil {
+		return false, object.NewTypeError("context manager lacks __exit__")
+	}
+
+	var excType, excVal, excTb object.Object = object.None, object.None, object.None
+	if exc != nil {
+		excType = exc.Type()
+		excVal = exc
+		if exc.Traceback != nil {
+			excTb = exc.Traceback
+		}
+	}
+
+	result, callErr := v.callObject(frame, exit, []object.Object{excType, excVal, excTb}, nil)
+	if callErr != nil {
+		if e, ok := callErr.(*object.ExceptionObject); ok {
+			return false, e
+		}
+		return false, object.NewRuntimeError(callErr.Error())
+	}
+	if exc == nil {
+		return false, nil // normal path: return value is ignored
+	}
+	truthy, _ := object.IsTruthy(result)
+	return truthy, nil
+}

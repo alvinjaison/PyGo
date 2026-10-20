@@ -36,6 +36,58 @@ type VM struct {
 	// importer resolves modules for IMPORT_NAME / IMPORT_FROM. It is optional;
 	// when nil, import statements raise ImportError.
 	importer Importer
+
+	// frames is the active frame stack, maintained so zero-argument super()
+	// can discover the executing method's instance and defining class.
+	frames []*Frame
+}
+
+// pushFrame / popFrame maintain the active frame stack and keep this VM marked
+// as the active VM while it has frames executing.
+func (v *VM) pushFrame(f *Frame) {
+	v.frames = append(v.frames, f)
+	pushActiveVM(v)
+}
+func (v *VM) popFrame() {
+	if len(v.frames) > 0 {
+		v.frames = v.frames[:len(v.frames)-1]
+	}
+	popActiveVM()
+}
+
+// topFrame returns the currently-executing frame, or nil.
+func (v *VM) topFrame() *Frame {
+	if len(v.frames) == 0 {
+		return nil
+	}
+	return v.frames[len(v.frames)-1]
+}
+
+// FrameContext reports the executing frame's instance (first local) and the
+// class whose method body is running, for zero-argument super().
+func (v *VM) FrameContext() *object.FrameContext {
+	f := v.topFrame()
+	if f == nil || f.Code == nil || len(f.Locals) == 0 {
+		return nil
+	}
+	self := f.Locals[0]
+	if self == nil {
+		return nil
+	}
+	inst, ok := self.(*object.InstanceObject)
+	if !ok {
+		return &object.FrameContext{Self: self}
+	}
+	// Discover the defining class: the class in type(self).__mro__ whose *own*
+	// dict holds a function whose code matches the running frame's code.
+	for _, cls := range inst.Type().MRO() {
+		if fn, err := cls.Dict().GetItem(object.StrFrom(f.Code.Name)); err == nil {
+			if fo, ok := fn.(*object.FunctionObject); ok && fo.Code == f.Code {
+				return &object.FrameContext{Self: self, DefiningClass: cls}
+			}
+		}
+	}
+	return &object.FrameContext{Self: self}
 }
 
 // Importer resolves a module name to a module object. The runtime supplies an
@@ -55,7 +107,43 @@ func New(ctx context.Context, maxDepth int) *VM {
 	if maxDepth <= 0 {
 		maxDepth = 500
 	}
+	installFrameContextHook()
 	return &VM{ctx: ctx, maxDepth: maxDepth}
+}
+
+// activeVMs is a stack of VMs currently executing a frame. The topmost entry
+// serves zero-argument super()'s frame-context queries. A single Runtime runs
+// on one goroutine at a time, so this stack reflects the active call chain.
+var activeVMs []*VM
+
+func pushActiveVM(v *VM) { activeVMs = append(activeVMs, v) }
+func popActiveVM() {
+	if n := len(activeVMs); n > 0 {
+		activeVMs = activeVMs[:n-1]
+	}
+}
+func currentActiveVM() *VM {
+	if n := len(activeVMs); n > 0 {
+		return activeVMs[n-1]
+	}
+	return nil
+}
+
+var frameHookInstalled bool
+
+// installFrameContextHook wires object.CurrentFrameContext to the active VM
+// once, so zero-argument super() can resolve its instance and defining class.
+func installFrameContextHook() {
+	if frameHookInstalled {
+		return
+	}
+	frameHookInstalled = true
+	object.SetFrameContextHook(func() *object.FrameContext {
+		if v := currentActiveVM(); v != nil {
+			return v.FrameContext()
+		}
+		return nil
+	})
 }
 
 // Run executes frame until it returns, yields, or an unhandled exception occurs.
@@ -76,6 +164,9 @@ func (v *VM) Run(frame *Frame) (result object.Object, err error) {
 
 	v.depth++
 	defer func() { v.depth-- }()
+
+	v.pushFrame(frame)
+	defer v.popFrame()
 
 	if v.depth > v.maxDepth {
 		exc := object.NewException(object.TypeRecursionError,
@@ -116,19 +207,16 @@ func (v *VM) Run(frame *Frame) (result object.Object, err error) {
 				// Wrap non-exception errors as RuntimeError.
 				exc = object.NewRuntimeError(stepErr.Error())
 			}
-			// Attempt to find an exception handler in this frame.
-			if handler, found := frame.UnwindToHandler(); found {
-				// Push exception info onto the stack and jump to handler.
-				frame.Push(exc)
-				frame.CurrentException = exc
-				frame.PC = handler.Handler
+			// Unwind the block stack, running with-statement __exit__ handlers
+			// and jumping to any exception handler found.
+			handled, propagate := v.unwind(frame, exc)
+			if handled {
 				continue
 			}
-			// No handler in this frame — propagate to caller.
-			if exc.Traceback == nil {
-				exc.Traceback = frame.Traceback()
+			if propagate.Traceback == nil {
+				propagate.Traceback = frame.Traceback()
 			}
-			return nil, exc
+			return nil, propagate
 		}
 
 		// A non-nil result signals RETURN_VALUE (or YIELD_VALUE) was executed.
@@ -142,9 +230,10 @@ func (v *VM) Run(frame *Frame) (result object.Object, err error) {
 // both Run (for ordinary calls) and generator resumption.
 //
 // It returns:
-//   value   — the yielded or returned value
-//   yielded — true if execution stopped at a YIELD_VALUE (frame is suspended)
-//   err     — a Python exception or cancellation error
+//
+//	value   — the yielded or returned value
+//	yielded — true if execution stopped at a YIELD_VALUE (frame is suspended)
+//	err     — a Python exception or cancellation error
 func (v *VM) runFrame(frame *Frame) (value object.Object, yielded bool, err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -157,6 +246,10 @@ func (v *VM) runFrame(frame *Frame) (value object.Object, yielded bool, err erro
 
 	v.depth++
 	defer func() { v.depth-- }()
+
+	v.pushFrame(frame)
+	defer v.popFrame()
+
 	if v.depth > v.maxDepth {
 		return nil, false, object.NewException(object.TypeRecursionError,
 			fmt.Sprintf("maximum recursion depth exceeded (%d)", v.maxDepth))
@@ -186,16 +279,14 @@ func (v *VM) runFrame(frame *Frame) (value object.Object, yielded bool, err erro
 			if !isExc {
 				exc = object.NewRuntimeError(stepErr.Error())
 			}
-			if handler, found := frame.UnwindToHandler(); found {
-				frame.Push(exc)
-				frame.CurrentException = exc
-				frame.PC = handler.Handler
+			handled, propagate := v.unwind(frame, exc)
+			if handled {
 				continue
 			}
-			if exc.Traceback == nil {
-				exc.Traceback = frame.Traceback()
+			if propagate.Traceback == nil {
+				propagate.Traceback = frame.Traceback()
 			}
-			return nil, false, exc
+			return nil, false, propagate
 		}
 
 		if result != nil {
@@ -820,13 +911,54 @@ func (v *VM) execute(f *Frame, instr bytecode.Instruction) (object.Object, error
 
 	case bytecode.POP_BLOCK:
 		if f.HasBlock() {
-			f.PopBlock()
+			b := f.PopBlock()
+			if b.Type == BlockWith {
+				// Remember it so the following WITH_CLEANUP can run __exit__.
+				bc := b
+				f.lastPoppedWith = &bc
+			}
 		}
 
 	case bytecode.POP_EXCEPT:
 		// Clears the exception currently being handled. The try block was
 		// already removed from the block stack during unwinding.
 		f.CurrentException = nil
+
+	// ---- Context managers ----
+
+	case bytecode.SETUP_WITH:
+		// TOS is the context manager. Call __enter__, push a with-block that
+		// remembers the manager (for __exit__ on unwind), and push the
+		// __enter__ result for binding.
+		mgr := f.Pop()
+		enter, err := getAttribute(mgr, "__enter__")
+		if err != nil {
+			return nil, object.NewTypeError(
+				"'%s' object does not support the context manager protocol", mgr.Type().Name())
+		}
+		// Verify __exit__ exists up front for a clear error.
+		if _, err := getAttribute(mgr, "__exit__"); err != nil {
+			return nil, object.NewTypeError(
+				"'%s' object does not support the context manager protocol (missing __exit__)",
+				mgr.Type().Name())
+		}
+		f.PushWithBlock(int(instr.Arg), mgr)
+		result, err := v.callObject(f, enter, nil, nil)
+		if err != nil {
+			return nil, err
+		}
+		f.Push(result)
+
+	case bytecode.WITH_CLEANUP:
+		// Normal (no-exception) completion of a with body: call
+		// __exit__(None, None, None). POP_BLOCK already removed the block.
+		if b := f.lastPoppedWith; b != nil {
+			if _, exitErr := v.callExit(f, b.Mgr, nil); exitErr != nil {
+				f.lastPoppedWith = nil
+				return nil, exitErr
+			}
+			f.lastPoppedWith = nil
+		}
 
 	// ---- Import ----
 
@@ -1049,16 +1181,16 @@ func constantToObject(c interface{}) object.Object {
 type rawConstant struct{ value interface{} }
 
 func (r *rawConstant) Type() *object.TypeObject { return object.ObjectType }
-func (r *rawConstant) String() string            { return "<raw-constant>" }
-func (r *rawConstant) Repr() string              { return r.String() }
+func (r *rawConstant) String() string           { return "<raw-constant>" }
+func (r *rawConstant) Repr() string             { return r.String() }
 
 // codeConstant wraps a *bytecode.Code as an Object for the constant pool.
 // It is only used internally during MAKE_FUNCTION execution.
 type codeConstant struct{ code *bytecode.Code }
 
 func (c *codeConstant) Type() *object.TypeObject { return object.ObjectType }
-func (c *codeConstant) String() string            { return fmt.Sprintf("<code object %s>", c.code.Name) }
-func (c *codeConstant) Repr() string              { return c.String() }
+func (c *codeConstant) String() string           { return fmt.Sprintf("<code object %s>", c.code.Name) }
+func (c *codeConstant) Repr() string             { return c.String() }
 
 // cellName returns the name of a cell variable by its index.
 func cellName(f *Frame, idx int) string {

@@ -58,6 +58,10 @@ type Frame struct {
 	// except clause, or nil if none.
 	CurrentException *object.ExceptionObject
 
+	// lastPoppedWith holds the most recently popped with-block, so the
+	// following WITH_CLEANUP can invoke its __exit__ on the normal path.
+	lastPoppedWith *Block
+
 	// Yielded is true when this frame has yielded and is suspended.
 	// Used for generator frames.
 	Yielded bool
@@ -142,6 +146,10 @@ type Block struct {
 	Type    BlockType
 	Handler int // bytecode offset of the handler (SETUP_FINALLY target)
 	Level   int // value stack depth when block was entered
+
+	// Mgr holds the context-manager object for a BlockWith, so the VM can
+	// call its __exit__ during unwinding. Nil for non-with blocks.
+	Mgr object.Object
 }
 
 // PushBlock pushes a new block onto the block stack.
@@ -150,6 +158,17 @@ func (f *Frame) PushBlock(bt BlockType, handler int) {
 		Type:    bt,
 		Handler: handler,
 		Level:   f.StackTop,
+	})
+}
+
+// PushWithBlock pushes a with-statement block that remembers its context
+// manager so __exit__ can be invoked on both the normal and exception paths.
+func (f *Frame) PushWithBlock(handler int, mgr object.Object) {
+	f.BlockStack = append(f.BlockStack, Block{
+		Type:    BlockWith,
+		Handler: handler,
+		Level:   f.StackTop,
+		Mgr:     mgr,
 	})
 }
 

@@ -43,6 +43,7 @@ func (r *Runtime) installBuiltins() {
 	reg("property", biProperty)
 	reg("classmethod", biClassMethod)
 	reg("staticmethod", biStaticMethod)
+	reg("super", biSuper)
 	reg("hash", biHash)
 	reg("iter", biIter)
 	reg("next", biNext)
@@ -57,10 +58,14 @@ func (r *Runtime) installBuiltins() {
 		object.TypeAttributeError, object.TypeIndexError, object.TypeKeyError,
 		object.TypeZeroDivisionError, object.TypeRuntimeError, object.TypeStopIteration,
 		object.TypeAssertionError, object.TypeNotImplementedError, object.TypeOverflowError,
+		object.TypeOSError, object.TypeImportError, object.TypeModuleNotFoundError,
+		object.TypeKeyboardInterrupt, object.TypeSystemExit, object.TypeUnboundLocalError,
 		object.ExceptionType, object.BaseExceptionType,
 	} {
 		_ = r.builtins.SetItem(object.StrFrom(t.Name()), t)
 	}
+	// IOError is an alias for OSError in Python 3.
+	_ = r.builtins.SetItem(object.StrFrom("IOError"), object.TypeOSError)
 
 	// Constants.
 	_ = r.builtins.SetItem(object.StrFrom("True"), object.PyTrue)
@@ -691,4 +696,26 @@ func biHasAttr(args []object.Object, _ map[string]object.Object) (object.Object,
 		return object.PyFalse, nil
 	}
 	return object.PyTrue, nil
+}
+
+// super([type, object]) returns a proxy that dispatches attribute access to
+// the next class in object's MRO after type. The zero-argument form infers
+// both from the executing method's frame.
+func biSuper(args []object.Object, _ map[string]object.Object) (object.Object, error) {
+	switch len(args) {
+	case 0:
+		ctx := object.CurrentFrameContext()
+		if ctx == nil || ctx.Self == nil || ctx.DefiningClass == nil {
+			return nil, object.NewRuntimeError("super(): no arguments and no enclosing method context")
+		}
+		return object.NewSuper(ctx.DefiningClass, ctx.Self, ctx.Self.Type()), nil
+	case 2:
+		cls, ok := args[0].(*object.TypeObject)
+		if !ok {
+			return nil, object.NewTypeError("super() argument 1 must be a type")
+		}
+		return object.NewSuper(cls, args[1], args[1].Type()), nil
+	default:
+		return nil, object.NewTypeError("super() takes 0 or 2 arguments")
+	}
 }

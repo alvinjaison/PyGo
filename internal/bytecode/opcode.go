@@ -23,19 +23,19 @@ type Instruction struct {
 
 // OpInfo describes an opcode's mnemonic and whether it takes an argument.
 type OpInfo struct {
-	Name    string
-	HasArg  bool
+	Name   string
+	HasArg bool
 }
 
 // Opcode constants.
 const (
 	// Stack manipulation
-	POP_TOP    Opcode = 1
-	ROT_TWO    Opcode = 2
-	ROT_THREE  Opcode = 3
-	DUP_TOP    Opcode = 4
+	POP_TOP     Opcode = 1
+	ROT_TWO     Opcode = 2
+	ROT_THREE   Opcode = 3
+	DUP_TOP     Opcode = 4
 	DUP_TOP_TWO Opcode = 5
-	ROT_FOUR   Opcode = 6
+	ROT_FOUR    Opcode = 6
 
 	// Unary operators
 	UNARY_POSITIVE Opcode = 10
@@ -83,18 +83,18 @@ const (
 	PRINT_EXPR Opcode = 70 // REPL expression printing
 
 	// Sequence building
-	BUILD_TUPLE          Opcode = 102
-	BUILD_LIST           Opcode = 103
-	BUILD_SET            Opcode = 104
-	BUILD_MAP            Opcode = 105
-	LIST_APPEND          Opcode = 145 // append TOS to the list at TOS1 (comprehensions)
-	SET_ADD              Opcode = 146
-	MAP_ADD              Opcode = 147
-	BUILD_CONST_KEY_MAP  Opcode = 141
-	BUILD_STRING         Opcode = 157
+	BUILD_TUPLE                  Opcode = 102
+	BUILD_LIST                   Opcode = 103
+	BUILD_SET                    Opcode = 104
+	BUILD_MAP                    Opcode = 105
+	LIST_APPEND                  Opcode = 145 // append TOS to the list at TOS1 (comprehensions)
+	SET_ADD                      Opcode = 146
+	MAP_ADD                      Opcode = 147
+	BUILD_CONST_KEY_MAP          Opcode = 141
+	BUILD_STRING                 Opcode = 157
 	BUILD_TUPLE_UNPACK_WITH_CALL Opcode = 158
-	BUILD_MAP_UNPACK     Opcode = 150
-	BUILD_SLICE          Opcode = 133
+	BUILD_MAP_UNPACK             Opcode = 150
+	BUILD_SLICE                  Opcode = 133
 
 	// Load / store (argument = index into names/consts/fastlocals)
 	LOAD_CONST  Opcode = 100
@@ -136,16 +136,16 @@ const (
 	JUMP_IF_FALSE_OR_POP Opcode = 111
 
 	// Iteration
-	GET_ITER        Opcode = 68
+	GET_ITER            Opcode = 68
 	GET_YIELD_FROM_ITER Opcode = 69
-	FOR_ITER        Opcode = 93
+	FOR_ITER            Opcode = 93
 
 	// Functions
-	MAKE_FUNCTION Opcode = 132
-	CALL_FUNCTION Opcode = 131
+	MAKE_FUNCTION    Opcode = 132
+	CALL_FUNCTION    Opcode = 131
 	CALL_FUNCTION_KW Opcode = 141
 	CALL_FUNCTION_EX Opcode = 142
-	RETURN_VALUE  Opcode = 83
+	RETURN_VALUE     Opcode = 83
 
 	// Exceptions
 	RAISE_VARARGS     Opcode = 130
@@ -154,6 +154,10 @@ const (
 	POP_EXCEPT        Opcode = 89
 	RERAISE           Opcode = 119
 	WITH_EXCEPT_START Opcode = 49
+
+	// Context managers
+	SETUP_WITH   Opcode = 143 // enter a with block (TOS = context manager)
+	WITH_CLEANUP Opcode = 148 // normal-path cleanup: call __exit__(None,None,None)
 
 	// Classes
 	LOAD_BUILD_CLASS Opcode = 71
@@ -226,11 +230,11 @@ func (op Opcode) HasArg() bool {
 }
 
 var opInfos = map[Opcode]OpInfo{
-	POP_TOP:    {"POP_TOP", false},
-	ROT_TWO:    {"ROT_TWO", false},
-	ROT_THREE:  {"ROT_THREE", false},
-	DUP_TOP:    {"DUP_TOP", false},
-	NOP:        {"NOP", false},
+	POP_TOP:      {"POP_TOP", false},
+	ROT_TWO:      {"ROT_TWO", false},
+	ROT_THREE:    {"ROT_THREE", false},
+	DUP_TOP:      {"DUP_TOP", false},
+	NOP:          {"NOP", false},
 	RETURN_VALUE: {"RETURN_VALUE", false},
 
 	UNARY_POSITIVE: {"UNARY_POSITIVE", false},
@@ -299,6 +303,8 @@ var opInfos = map[Opcode]OpInfo{
 	SETUP_FINALLY: {"SETUP_FINALLY", true},
 	POP_BLOCK:     {"POP_BLOCK", false},
 	POP_EXCEPT:    {"POP_EXCEPT", false},
+	SETUP_WITH:    {"SETUP_WITH", true},
+	WITH_CLEANUP:  {"WITH_CLEANUP", false},
 	RERAISE:       {"RERAISE", true},
 
 	LOAD_BUILD_CLASS: {"LOAD_BUILD_CLASS", false},

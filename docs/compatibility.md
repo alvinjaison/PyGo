@@ -53,10 +53,11 @@ test suite:
   caching, user `.py` modules on the search path, host-registered modules, and
   the `math`, `json`, `re`, `random`, `sys`, `string`, `functools`,
   `itertools`, `os` (+`os.path`), `time`, `collections` (Counter, defaultdict,
-  OrderedDict, deque, namedtuple), and `datetime` (date, datetime, timedelta)
-  built-in modules. (`re` is backed by Go's RE2 engine, so backreferences and
-  lookaround in patterns are not supported. `os` is OS-capable and is blocked
-  in restricted-mode runtimes.)
+  OrderedDict, deque, namedtuple), `datetime` (date, datetime, timedelta),
+  `hashlib` (md5/sha1/sha224/sha256/sha384/sha512), and `base64` (b64/b32/b16,
+  url-safe) built-in modules. (`re` is backed by Go's RE2 engine, so
+  backreferences and lookaround in patterns are not supported. `os` is
+  OS-capable and is blocked in restricted-mode runtimes.)
 - **List methods:** append, extend, insert, pop, remove, index, count, sort,
   reverse, clear, copy.
 - **Embedding:** `RunString`/`Eval`/`Set`/`Get`, `RegisterFunction`/`Register`
@@ -481,8 +482,8 @@ This document categorizes every significant Python 3 language and runtime featur
 | `http` | Not Planned | |
 | `xml` / `html` | Not Planned | |
 | `csv` | Future | Pure Python possible |
-| `hashlib` | Future | Go (`crypto`) |
-| `base64` | Future | Go (`encoding/base64`) |
+| `hashlib` | **Implemented** | md5/sha1/sha224/sha256/sha384/sha512 (no copy()) |
+| `base64` | **Implemented** | b64/b32/b16 incl. url-safe variants |
 | `struct` (binary packing) | Future | |
 | `ctypes` | Not Planned | Requires CPython C API |
 | `cffi` | Not Planned | Requires CPython C API |

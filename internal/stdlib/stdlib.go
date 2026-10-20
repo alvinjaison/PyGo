@@ -22,6 +22,21 @@ var registry = map[string]Builder{
 	"string":    buildString,
 	"functools": buildFunctools,
 	"itertools": buildItertools,
+	"os":        buildOS,
+	"time":      buildTime,
+}
+
+// osCapable lists modules that interact with the host OS (filesystem,
+// environment, processes). The import system blocks these when a runtime is
+// created in restricted mode.
+var osCapable = map[string]bool{
+	"os": true,
+}
+
+// IsOSCapable reports whether importing the named module grants access to host
+// OS capabilities and should therefore be blocked in restricted mode.
+func IsOSCapable(name string) bool {
+	return osCapable[name]
 }
 
 // Names returns the list of available built-in module names.

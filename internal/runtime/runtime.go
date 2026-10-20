@@ -62,10 +62,9 @@ func New(cfg Config) *Runtime {
 	_ = r.globals.SetItem(object.StrFrom("__builtins__"), r.builtins)
 	_ = r.globals.SetItem(object.StrFrom("__name__"), object.StrFrom("__main__"))
 
-	// Set up the module importer (disabled in restricted mode).
-	if !cfg.Restricted {
-		r.importer = importer.New(cfg.SearchPath, r)
-	}
+	// Set up the module importer. In restricted mode imports are still allowed
+	// for safe modules, but OS-capable modules (e.g. os) are blocked.
+	r.importer = importer.New(cfg.SearchPath, r, cfg.Restricted)
 
 	// Install the global callable-invocation hook so stdlib/interop code can
 	// call Python callables (including user functions) through the VM.

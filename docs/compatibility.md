@@ -35,8 +35,9 @@ test suite:
 - **Imports / stdlib:** `import`, `from … import`, `import … as`, module
   caching, user `.py` modules on the search path, host-registered modules, and
   the `math`, `json`, `re`, `random`, `sys`, `string`, `functools`,
-  `itertools` built-in modules. (`re` is backed by Go's RE2 engine, so
-  backreferences and lookaround in patterns are not supported.)
+  `itertools`, `os` (+`os.path`), and `time` built-in modules. (`re` is backed
+  by Go's RE2 engine, so backreferences and lookaround in patterns are not
+  supported. `os` is OS-capable and is blocked in restricted-mode runtimes.)
 - **Embedding:** `RunString`/`Eval`/`Set`/`Get`, `RegisterFunction`/`Register`
   (structs, methods, Go error → Python exception), `CallByName`.
 - **CLI:** `pygo script.py`, `pygo -c`, and an interactive REPL.
@@ -429,12 +430,12 @@ This document categorizes every significant Python 3 language and runtime featur
 | `builtins` | MVP | Go |
 | `sys` (subset) | MVP | Go |
 | `math` | MVP | Go (wraps `math` package) |
-| `os` (subset: path, environ, getcwd) | Future | Go |
-| `os.path` | Future | Go |
+| `os` (subset: path, environ, getcwd, listdir, mkdir, remove) | **Implemented** | Go — blocked in restricted mode |
+| `os.path` | **Implemented** | Go (join/exists/isfile/isdir/basename/dirname/abspath/splitext) |
 | `pathlib` | Future | Go |
 | `json` | Post-MVP | Go (wraps `encoding/json`) |
 | `re` (subset) | **Implemented** | Go (wraps `regexp`/RE2) — no backrefs/lookaround |
-| `time` (subset) | Future | Go |
+| `time` (subset) | **Implemented** | Go (time/time_ns/monotonic/perf_counter/sleep/strftime) |
 | `datetime` | Future | Go |
 | `io` (subset) | Future | Go |
 | `sys` (full) | Future | Go |

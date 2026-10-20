@@ -31,10 +31,12 @@ type Importer struct {
 	cache      map[string]*object.ModuleObject
 	inProgress map[string]bool // for circular-import detection
 	exec       Execer
+	restricted bool // when true, OS-capable modules cannot be imported
 }
 
 // New creates an Importer with the given search path and module executor.
-func New(searchPath []string, exec Execer) *Importer {
+// When restricted is true, OS-capable built-in modules (e.g. os) are blocked.
+func New(searchPath []string, exec Execer, restricted bool) *Importer {
 	if len(searchPath) == 0 {
 		searchPath = []string{"."}
 	}
@@ -43,6 +45,7 @@ func New(searchPath []string, exec Execer) *Importer {
 		cache:      map[string]*object.ModuleObject{},
 		inProgress: map[string]bool{},
 		exec:       exec,
+		restricted: restricted,
 	}
 }
 
@@ -68,6 +71,10 @@ func (im *Importer) Import(name string) (*object.ModuleObject, error) {
 
 	// 2. Built-in Go module.
 	if stdlib.Has(name) {
+		if im.restricted && stdlib.IsOSCapable(name) {
+			return nil, object.NewException(object.TypeImportError,
+				"import of '"+name+"' is not allowed in restricted mode")
+		}
 		mod := stdlib.Build(name)
 		im.cache[name] = mod
 		return mod, nil

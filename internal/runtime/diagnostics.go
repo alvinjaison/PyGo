@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/pygo/pygo/internal/bytecode"
-	"github.com/pygo/pygo/internal/parser"
+	"github.com/alvinjaison/PyGo/internal/bytecode"
+	"github.com/alvinjaison/PyGo/internal/parser"
 )
 
 // Disassemble compiles source and writes a human-readable disassembly.

@@ -1,8 +1,8 @@
 package compiler
 
 import (
-	"github.com/pygo/pygo/internal/ast"
-	"github.com/pygo/pygo/internal/bytecode"
+	"github.com/alvinjaison/PyGo/internal/ast"
+	"github.com/alvinjaison/PyGo/internal/bytecode"
 )
 
 func (c *compiler) compileStmt(s ast.Stmt) {

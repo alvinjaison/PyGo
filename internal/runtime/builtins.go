@@ -5,7 +5,7 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/pygo/pygo/internal/object"
+	"github.com/alvinjaison/PyGo/internal/object"
 )
 
 // installBuiltins populates the runtime's builtin namespace with core

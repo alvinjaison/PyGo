@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/pygo/pygo/internal/object"
+	"github.com/alvinjaison/PyGo/internal/object"
 )
 
 // writeModule writes a .py file into dir and returns dir.

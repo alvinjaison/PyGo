@@ -6,7 +6,7 @@
 // using the object model.
 package stdlib
 
-import "github.com/pygo/pygo/internal/object"
+import "github.com/alvinjaison/PyGo/internal/object"
 
 // Builder constructs a module object. It receives the module's name so the
 // returned module reports the correct __name__.

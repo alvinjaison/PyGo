@@ -1,8 +1,8 @@
 package runtime
 
 import (
-	"github.com/pygo/pygo/internal/bytecode"
-	"github.com/pygo/pygo/internal/object"
+	"github.com/alvinjaison/PyGo/internal/bytecode"
+	"github.com/alvinjaison/PyGo/internal/object"
 )
 
 // cmpToBytecode maps an object.CompareOp to the bytecode compare op used by

@@ -1,6 +1,6 @@
 package compiler
 
-import "github.com/pygo/pygo/internal/ast"
+import "github.com/alvinjaison/PyGo/internal/ast"
 
 // symbolKind classifies how a name is bound in a scope.
 type symbolKind int

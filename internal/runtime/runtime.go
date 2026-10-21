@@ -11,12 +11,12 @@ import (
 	"io"
 	"os"
 
-	"github.com/pygo/pygo/internal/bytecode"
-	"github.com/pygo/pygo/internal/compiler"
-	"github.com/pygo/pygo/internal/importer"
-	"github.com/pygo/pygo/internal/object"
-	"github.com/pygo/pygo/internal/parser"
-	"github.com/pygo/pygo/internal/vm"
+	"github.com/alvinjaison/PyGo/internal/bytecode"
+	"github.com/alvinjaison/PyGo/internal/compiler"
+	"github.com/alvinjaison/PyGo/internal/importer"
+	"github.com/alvinjaison/PyGo/internal/object"
+	"github.com/alvinjaison/PyGo/internal/parser"
+	"github.com/alvinjaison/PyGo/internal/vm"
 )
 
 // Config configures a Runtime.

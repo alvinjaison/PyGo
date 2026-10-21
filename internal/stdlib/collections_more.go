@@ -1,6 +1,6 @@
 package stdlib
 
-import "github.com/pygo/pygo/internal/object"
+import "github.com/alvinjaison/PyGo/internal/object"
 
 // ============================================================
 // defaultdict

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/pygo/pygo/internal/bytecode"
+	"github.com/alvinjaison/PyGo/internal/bytecode"
 )
 
 // binaryOp dispatches a binary operation on two Python objects.

@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/pygo/pygo/pygo"
+	"github.com/alvinjaison/PyGo/pygo"
 )
 
 // runREPL starts the interactive Read-Eval-Print Loop and returns an exit code.

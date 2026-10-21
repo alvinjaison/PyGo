@@ -1,6 +1,6 @@
 package compiler
 
-import "github.com/pygo/pygo/internal/bytecode"
+import "github.com/alvinjaison/PyGo/internal/bytecode"
 
 // stackEffect returns the net change in value-stack depth produced by one
 // instruction. Used only to size the frame's value stack conservatively.

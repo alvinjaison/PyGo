@@ -1,6 +1,6 @@
 package object
 
-import "github.com/pygo/pygo/internal/bytecode"
+import "github.com/alvinjaison/PyGo/internal/bytecode"
 
 // GetAttr exposes list methods as bound builtins. Methods that mutate operate
 // on the list in place.

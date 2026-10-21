@@ -3,7 +3,7 @@ package stdlib
 import (
 	"math"
 
-	"github.com/pygo/pygo/internal/object"
+	"github.com/alvinjaison/PyGo/internal/object"
 )
 
 // buildMath constructs the `math` module.

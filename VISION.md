@@ -52,7 +52,7 @@ CPython is never in the picture. PyGo is the runtime.
 A Go application imports PyGo as a library:
 
 ```go
-import "github.com/pygo/pygo"
+import "github.com/alvinjaison/PyGo/pygo"
 
 rt := pygo.New()
 rt.RegisterFunction("greet", func(name string) string {

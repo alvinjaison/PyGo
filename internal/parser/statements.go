@@ -1,8 +1,8 @@
 package parser
 
 import (
-	"github.com/pygo/pygo/internal/ast"
-	"github.com/pygo/pygo/internal/lexer"
+	"github.com/alvinjaison/PyGo/internal/ast"
+	"github.com/alvinjaison/PyGo/internal/lexer"
 )
 
 // parseStatement parses one statement (simple or compound).

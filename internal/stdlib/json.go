@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/pygo/pygo/internal/object"
+	"github.com/alvinjaison/PyGo/internal/object"
 )
 
 // buildJSON constructs the `json` module (dumps/loads).

@@ -3,7 +3,7 @@ package stdlib
 import (
 	"strings"
 
-	"github.com/pygo/pygo/internal/object"
+	"github.com/alvinjaison/PyGo/internal/object"
 )
 
 // namedTupleConstructor implements collections.namedtuple(typename, field_names).

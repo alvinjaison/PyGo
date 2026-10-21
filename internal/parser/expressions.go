@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/pygo/pygo/internal/ast"
-	"github.com/pygo/pygo/internal/bytecode"
-	"github.com/pygo/pygo/internal/lexer"
+	"github.com/alvinjaison/PyGo/internal/ast"
+	"github.com/alvinjaison/PyGo/internal/bytecode"
+	"github.com/alvinjaison/PyGo/internal/lexer"
 )
 
 // Precedence levels, lowest to highest.

@@ -4,7 +4,7 @@ import (
 	"context"
 	"runtime"
 
-	"github.com/pygo/pygo/internal/object"
+	"github.com/alvinjaison/PyGo/internal/object"
 )
 
 // abortError represents a hard, non-catchable termination of execution: an

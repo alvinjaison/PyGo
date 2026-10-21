@@ -3,7 +3,7 @@ package pygo
 import (
 	"fmt"
 
-	"github.com/pygo/pygo/internal/object"
+	"github.com/alvinjaison/PyGo/internal/object"
 )
 
 // valueImpl is the concrete implementation of the public Value interface,

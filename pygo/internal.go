@@ -5,8 +5,8 @@ import (
 	"io"
 	"time"
 
-	"github.com/pygo/pygo/internal/object"
-	"github.com/pygo/pygo/internal/runtime"
+	"github.com/alvinjaison/PyGo/internal/object"
+	"github.com/alvinjaison/PyGo/internal/runtime"
 )
 
 // runtimeConfig holds all configuration for a Runtime.

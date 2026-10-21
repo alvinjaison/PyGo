@@ -1,7 +1,7 @@
 package stdlib
 
 import (
-	"github.com/pygo/pygo/internal/object"
+	"github.com/alvinjaison/PyGo/internal/object"
 )
 
 // buildCollections constructs the `collections` module: Counter, defaultdict,

@@ -10,8 +10,8 @@
 package vm
 
 import (
-	"github.com/pygo/pygo/internal/bytecode"
-	"github.com/pygo/pygo/internal/object"
+	"github.com/alvinjaison/PyGo/internal/bytecode"
+	"github.com/alvinjaison/PyGo/internal/object"
 )
 
 // Frame holds the execution state of a single function invocation.

@@ -7,8 +7,8 @@ import (
 	"math/big"
 	"reflect"
 
-	"github.com/pygo/pygo/internal/object"
-	"github.com/pygo/pygo/internal/vm"
+	"github.com/alvinjaison/PyGo/internal/object"
+	"github.com/alvinjaison/PyGo/internal/vm"
 )
 
 // toPublicError converts an internal error (possibly an *object.ExceptionObject)

@@ -457,7 +457,7 @@ For large architectural changes (e.g., "rethink the bytecode format" or "change 
 [ ] Read VISION.md
 [ ] Read docs/architecture.md
 [ ] Read the doc for your chosen contribution area (e.g., docs/object-model.md for object model work)
-[ ] Clone the repo: git clone https://github.com/pygo/pygo
+[ ] Clone the repo: git clone https://github.com/alvinjaison/PyGo
 [ ] Verify it builds: go build ./...
 [ ] Verify tests pass: go test ./...
 [ ] Pick a good-first-issue or open one proposing your contribution

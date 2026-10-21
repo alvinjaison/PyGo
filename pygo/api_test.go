@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pygo/pygo/pygo"
+	"github.com/alvinjaison/PyGo/pygo"
 )
 
 func TestPublicRunString(t *testing.T) {

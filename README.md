@@ -42,30 +42,54 @@ Useful for:
 
 ## Status
 
-**Phase 0 — Architecture complete.** The design documents, object model, public API, and skeleton implementation are in place. Phase 1 (minimal interpreter) is the next milestone.
-
-This project is in early development. No Python programs execute yet. Contributions are welcome — see [docs/contributing.md](docs/contributing.md).
+PyGo runs a substantial subset of Python 3 today. It is usable for embedding
+and scripting, though not yet a complete CPython replacement.
 
 | Phase | Goal | Status |
 |-------|------|--------|
 | 0 | Architecture and design | ✅ Complete |
-| 1 | `print("Hello, world!")` works | 🔨 Next |
-| 2 | Core language (functions, loops, exceptions) | Planned |
-| 3 | Classes and object model | Planned |
-| 4 | Go ↔ Python interoperability | Planned |
-| 5 | Modules and standard library | Planned |
-| 6 | CLI and REPL | Planned |
-| 7 | Compatibility expansion | Planned |
-| 8 | Performance and production hardening | Planned |
+| 1 | Minimal interpreter | ✅ Complete |
+| 2 | Core language (functions, loops, exceptions, collections) | ✅ Complete |
+| 3 | Classes and object model (dunders, descriptors, `super()`) | ✅ Complete |
+| 4 | Go ↔ Python interoperability | ✅ Complete |
+| 5 | Modules and standard library | ✅ Largely complete |
+| 6 | CLI and REPL | ✅ Complete |
+| 7 | Compatibility expansion | 🔨 Ongoing |
+| 8 | Hardening (execution limits) + performance | 🔨 In progress |
 
-See [docs/roadmap.md](docs/roadmap.md) for detailed scope and effort estimates.
+**What works today:**
+
+- Core language: variables, arithmetic (arbitrary-precision `int`), all
+  operators, chained comparisons, `if`/`while`/`for`, functions with defaults /
+  `*args` / `**kwargs`, closures, lambdas, recursion.
+- Data types: `int`, `float`, `bool`, `None`, `str`, `bytes`, `list`, `tuple`,
+  `dict`, `set`; indexing, slicing, comprehensions, generators, f-strings.
+- Classes: inheritance (C3 MRO), operator overloading and the full dunder
+  protocol, `@property` / `@classmethod` / `@staticmethod`, `super()`.
+- Exceptions: `try`/`except`/`finally`, `raise`, custom exception classes, and
+  exception-safe `with` statements.
+- Imports and a standard library subset: `math`, `json`, `re`, `random`,
+  `sys`, `string`, `functools`, `itertools`, `os`, `time`, `collections`,
+  `datetime`, `hashlib`, `base64`.
+- Embedding: run code, exchange values, register Go functions / structs /
+  modules, call Python from Go.
+- CLI: `pygo script.py`, `pygo -c`, and an interactive REPL.
+- Hardening: enforceable instruction, memory, recursion, and timeout limits
+  for running untrusted code.
+
+**Not yet implemented:** `async`/`await`, the `match` statement, lazy
+generator expressions, generator `.send()`/`.throw()`, `bytearray`, custom
+descriptors and metaclasses, and most of the remaining standard library.
+
+See [docs/roadmap.md](docs/roadmap.md) and the full
+[compatibility matrix](docs/compatibility.md) for details.
 
 ---
 
 ## Installation
 
 ```bash
-go get github.com/pygo/pygo
+go get github.com/alvinjaison/PyGo
 ```
 
 Requires Go 1.22+. No other dependencies at runtime.
@@ -83,7 +107,7 @@ import (
     "fmt"
     "log"
 
-    "github.com/pygo/pygo/pygo"
+    "github.com/alvinjaison/PyGo/pygo"
 )
 
 func main() {
@@ -152,12 +176,25 @@ while True:
 `)
 ```
 
-### Standalone CLI (Phase 6)
+### Running untrusted code with limits
+
+```go
+rt := pygo.New(
+    pygo.WithRestrictedBuiltins(),          // no open/os/exec
+    pygo.WithMaxInstructions(10_000_000),   // stop runaway loops
+    pygo.WithExecutionTimeout(time.Second), // wall-clock cap
+)
+err := rt.RunString(untrustedSource)
+// Instruction/timeout aborts cannot be swallowed by `except` in the script.
+```
+
+### Standalone CLI
 
 ```bash
 pygo script.py
 pygo -c "print(10 + 20)"
-pygo                        # interactive REPL
+pygo --timeout 5s script.py   # abort if it runs too long
+pygo                          # interactive REPL
 ```
 
 ---
@@ -165,7 +202,7 @@ pygo                        # interactive REPL
 ## Project Layout
 
 ```
-github.com/pygo/pygo
+github.com/alvinjaison/PyGo
 │
 ├── pygo/                   ← Public API (import this)
 │   ├── pygo.go             ← Runtime type, New(), options
@@ -181,9 +218,10 @@ github.com/pygo/pygo
 │   ├── vm/                 ← Bytecode execution engine
 │   ├── object/             ← Python object model (int, str, list, dict, …)
 │   ├── runtime/            ← Execution coordinator, built-ins
-│   ├── interop/            ← Go ↔ Python type conversion
 │   ├── importer/           ← Module resolution and loading
 │   └── stdlib/             ← Standard library modules
+│
+│   (Go ↔ Python conversion lives in pygo/convert.go and pygo/interop.go)
 │
 ├── cmd/pygo/               ← Standalone CLI binary
 ├── examples/               ← Embedding examples
@@ -192,15 +230,20 @@ github.com/pygo/pygo
 ```
 
 The `internal/` packages are the only things that ever import each other.
-Consumers only ever import `github.com/pygo/pygo/pygo`.
+Consumers only ever import `github.com/alvinjaison/PyGo/pygo`.
 
 ---
 
 ## Public API
 
 ```go
-// Construction
+// Construction + options
 rt := pygo.New(opts...)
+pygo.WithRestrictedBuiltins()            // disable open/os/exec for untrusted code
+pygo.WithMaxInstructions(n int64)        // cap executed bytecode instructions
+pygo.WithMaxMemory(bytes int64)          // best-effort heap cap
+pygo.WithExecutionTimeout(d)             // wall-clock cap
+pygo.WithMaxCallDepth(n int)             // recursion limit
 
 // Execution
 rt.RunString(source string) error
@@ -235,23 +278,21 @@ Full API documentation: [docs/api.md](docs/api.md)
 
 PyGo targets **Python 3 language compatibility**. It does not aim for CPython ABI compatibility or support for C extension modules.
 
-Current compatibility status: **pre-implementation** (Phase 0).
-
-The target compatibility surface for the MVP (Phase 2):
-
-| Feature | Target |
+| Feature | Status |
 |---------|--------|
-| Variables, arithmetic, strings, booleans, None | ✅ MVP |
-| Lists, tuples, dicts, sets | ✅ MVP |
-| Control flow (if, for, while, break, continue) | ✅ MVP |
-| Functions, closures, *args, **kwargs | ✅ MVP |
-| Exceptions (try/except/finally) | ✅ MVP |
-| f-strings (basic) | ✅ MVP |
-| Classes and inheritance | Phase 3 |
-| Generators | Phase 2+ |
-| Comprehensions | Phase 2+ |
-| async/await | Phase 6+ |
-| Standard library (math, json, re, os subset) | Phase 5 |
+| Variables, arithmetic, strings, booleans, None | ✅ |
+| bytes (literals, methods, encode/decode) | ✅ |
+| Lists, tuples, dicts, sets | ✅ |
+| Control flow (if, for, while, break, continue) | ✅ |
+| Functions, closures, *args, **kwargs, lambdas | ✅ |
+| Exceptions (try/except/finally, raise, custom classes) | ✅ |
+| f-strings | ✅ |
+| Classes, inheritance, dunders, `super()`, properties | ✅ |
+| Generators, comprehensions, generator expressions | ✅ |
+| Context managers (`with`, exception-safe) | ✅ |
+| Standard library (math, json, re, os, datetime, …) | ✅ (subset) |
+| Execution limits (instructions, memory, timeout) | ✅ |
+| async/await, `match`, metaclasses | ❌ not yet |
 
 Full matrix: [docs/compatibility.md](docs/compatibility.md)
 

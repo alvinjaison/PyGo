@@ -3,7 +3,7 @@ package stdlib
 import (
 	"time"
 
-	"github.com/pygo/pygo/internal/object"
+	"github.com/alvinjaison/PyGo/internal/object"
 )
 
 // buildTime constructs the `time` module.

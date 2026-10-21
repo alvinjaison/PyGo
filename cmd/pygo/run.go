@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/pygo/pygo/pygo"
+	"github.com/alvinjaison/PyGo/pygo"
 )
 
 // runScript executes a .py file and returns the process exit code.

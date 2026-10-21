@@ -3,7 +3,7 @@ package object
 import (
 	"fmt"
 
-	"github.com/pygo/pygo/internal/bytecode"
+	"github.com/alvinjaison/PyGo/internal/bytecode"
 )
 
 // ============================================================

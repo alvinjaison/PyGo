@@ -8,7 +8,7 @@ import (
 	"encoding/hex"
 	"hash"
 
-	"github.com/pygo/pygo/internal/object"
+	"github.com/alvinjaison/PyGo/internal/object"
 )
 
 // hashFactory maps an algorithm name to a Go hash constructor and digest size.

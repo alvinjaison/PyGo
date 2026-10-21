@@ -12,8 +12,8 @@ package compiler
 import (
 	"fmt"
 
-	"github.com/pygo/pygo/internal/ast"
-	"github.com/pygo/pygo/internal/bytecode"
+	"github.com/alvinjaison/PyGo/internal/ast"
+	"github.com/alvinjaison/PyGo/internal/bytecode"
 )
 
 // Error is a compile-time error (e.g., an unsupported construct).

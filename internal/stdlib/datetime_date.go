@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pygo/pygo/internal/object"
+	"github.com/alvinjaison/PyGo/internal/object"
 )
 
 // ============================================================

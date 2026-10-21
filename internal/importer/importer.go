@@ -15,8 +15,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/pygo/pygo/internal/object"
-	"github.com/pygo/pygo/internal/stdlib"
+	"github.com/alvinjaison/PyGo/internal/object"
+	"github.com/alvinjaison/PyGo/internal/stdlib"
 )
 
 // Execer compiles and executes Python module source in the given module's

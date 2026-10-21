@@ -1,8 +1,8 @@
 package vm
 
 import (
-	"github.com/pygo/pygo/internal/compiler"
-	"github.com/pygo/pygo/internal/object"
+	"github.com/alvinjaison/PyGo/internal/compiler"
+	"github.com/alvinjaison/PyGo/internal/object"
 )
 
 // CallExternal invokes a callable object from outside the VM (from Go host

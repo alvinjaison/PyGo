@@ -56,6 +56,9 @@ func (c *compiler) compileStmt(s ast.Stmt) {
 		} else {
 			c.emit(bytecode.LOAD_CONST, c.constIndex(nil))
 		}
+		// Leave every enclosing try/finally/with cleanly before returning;
+		// the return value stays on the stack while cleanup code runs.
+		c.emitUnwindTo(0)
 		c.emit(bytecode.RETURN_VALUE, 0)
 
 	case *ast.Pass:
@@ -66,8 +69,14 @@ func (c *compiler) compileStmt(s ast.Stmt) {
 			c.fail(n.Pos().Line, "'break' outside loop")
 			return
 		}
-		j := c.emitJump(bytecode.JUMP_ABSOLUTE)
 		lc := &c.loops[len(c.loops)-1]
+		c.emitUnwindTo(lc.unwindDepth)
+		if lc.isFor {
+			// Discard the loop's iterator, which FOR_ITER would otherwise pop
+			// only on normal exhaustion.
+			c.emit(bytecode.POP_TOP, 0)
+		}
+		j := c.emitJump(bytecode.JUMP_ABSOLUTE)
 		lc.breakJumps = append(lc.breakJumps, j)
 
 	case *ast.Continue:
@@ -76,6 +85,7 @@ func (c *compiler) compileStmt(s ast.Stmt) {
 			return
 		}
 		lc := c.loops[len(c.loops)-1]
+		c.emitUnwindTo(lc.unwindDepth)
 		c.emit(bytecode.JUMP_ABSOLUTE, uint32(lc.continueTarget))
 
 	case *ast.Raise:
@@ -138,7 +148,7 @@ func (c *compiler) compileWhile(n *ast.While) {
 	c.compileExpr(n.Test)
 	exitJump := c.emitJump(bytecode.POP_JUMP_IF_FALSE)
 
-	c.loops = append(c.loops, loopContext{continueTarget: loopStart})
+	c.loops = append(c.loops, loopContext{continueTarget: loopStart, unwindDepth: len(c.unwinds)})
 	c.compileBlock(n.Body)
 	lc := c.loops[len(c.loops)-1]
 	c.loops = c.loops[:len(c.loops)-1]
@@ -162,7 +172,7 @@ func (c *compiler) compileFor(n *ast.For) {
 	forIter := c.emitJump(bytecode.FOR_ITER) // jumps past loop on exhaustion
 	c.compileAssignTarget(n.Target)
 
-	c.loops = append(c.loops, loopContext{continueTarget: loopStart})
+	c.loops = append(c.loops, loopContext{continueTarget: loopStart, isFor: true, unwindDepth: len(c.unwinds)})
 	c.compileBlock(n.Body)
 	lc := c.loops[len(c.loops)-1]
 	c.loops = c.loops[:len(c.loops)-1]
@@ -194,19 +204,70 @@ func (c *compiler) compileRaise(n *ast.Raise) {
 	}
 }
 
+// compileTry compiles try/except/else/finally.
+//
+// Layout with a finally clause (the except/else part is compiled by
+// compileTryExcept inside the finally-protected region):
+//
+//	SETUP_FINALLY fin
+//	  <try / except / else>
+//	POP_BLOCK
+//	<finally body>            ; normal completion
+//	JUMP end
+//	fin:                      ; an exception escaped; it is on the stack
+//	<finally body>            ; duplicated so it also runs on this path
+//	RERAISE
+//	end:
+//
+// Early exits (return/break/continue) inside the protected region run the
+// finally body inline via emitUnwindTo.
 func (c *compiler) compileTry(n *ast.Try) {
-	// Simplified try/except model for Phase 2:
-	//   SETUP_FINALLY <handler>
-	//   <body>
-	//   POP_BLOCK
-	//   JUMP <else-or-end>
-	// handler:
-	//   <for each except: match type, bind name, run body>
-	//   (re-raise if no handler matched)
-	// end:
-	//   <finally>
+	if len(n.Finalbody) == 0 {
+		c.compileTryExcept(n)
+		return
+	}
+
+	setupFin := c.emitJump(bytecode.SETUP_FINALLY)
+	c.unwinds = append(c.unwinds, unwindEntry{kind: uwFinally, finalbody: n.Finalbody})
+	c.compileTryExcept(n)
+	c.unwinds = c.unwinds[:len(c.unwinds)-1]
+
+	c.emit(bytecode.POP_BLOCK, 0)
+	c.compileBlock(n.Finalbody)
+	endJump := c.emitJump(bytecode.JUMP_ABSOLUTE)
+
+	c.patchJump(setupFin) // handler offset: the exceptional path starts here
+	c.compileBlock(n.Finalbody)
+	c.emit(bytecode.RERAISE, 0)
+
+	c.patchJump(endJump)
+}
+
+// compileTryExcept compiles the try body with its except clauses and else
+// block (but not finally).
+//
+//	SETUP_FINALLY handler
+//	<body>
+//	POP_BLOCK
+//	JUMP else
+//	handler:                  ; exception on the stack
+//	  <for each clause: match, bind, run body, JUMP end>
+//	  RERAISE                 ; no clause matched
+//	else:
+//	<else body>               ; runs only if the body raised nothing
+//	end:
+func (c *compiler) compileTryExcept(n *ast.Try) {
+	if len(n.Handlers) == 0 {
+		// try/finally only: there is nothing to catch here.
+		c.compileBlock(n.Body)
+		c.compileBlock(n.Orelse)
+		return
+	}
+
 	setup := c.emitJump(bytecode.SETUP_FINALLY)
+	c.unwinds = append(c.unwinds, unwindEntry{kind: uwBlock})
 	c.compileBlock(n.Body)
+	c.unwinds = c.unwinds[:len(c.unwinds)-1]
 	c.emit(bytecode.POP_BLOCK, 0)
 	successJump := c.emitJump(bytecode.JUMP_ABSOLUTE)
 
@@ -216,7 +277,7 @@ func (c *compiler) compileTry(n *ast.Try) {
 	var endJumps []int
 	for _, h := range n.Handlers {
 		// Stack top holds the raised exception (pushed by the VM).
-		var nextHandler int = -1
+		nextHandler := -1
 		if h.Type != nil {
 			c.emit(bytecode.DUP_TOP, 0)
 			c.compileExpr(h.Type)
@@ -241,16 +302,38 @@ func (c *compiler) compileTry(n *ast.Try) {
 	// No handler matched: re-raise.
 	c.emit(bytecode.RERAISE, 0)
 
+	// The else block runs only when the body completed without an exception.
 	c.patchJump(successJump)
+	c.compileBlock(n.Orelse)
+
 	for _, j := range endJumps {
 		c.patchJump(j)
 	}
+}
 
-	if len(n.Orelse) > 0 {
-		c.compileBlock(n.Orelse)
-	}
-	if len(n.Finalbody) > 0 {
-		c.compileBlock(n.Finalbody)
+// emitUnwindTo emits the cleanup code for leaving every protected region
+// entered since depth, innermost first, as required by return/break/continue:
+// each region's block is popped, with-statements get their __exit__ called,
+// and finally bodies are run inline. It does not modify c.unwinds.
+func (c *compiler) emitUnwindTo(depth int) {
+	saved := c.unwinds
+	defer func() { c.unwinds = saved }()
+
+	for i := len(saved) - 1; i >= depth; i-- {
+		e := saved[i]
+		// While emitting this region's cleanup we are logically outside it, so
+		// a nested return inside a finally body only unwinds the outer regions.
+		// Use a fresh slice: appending to saved[:i] would overwrite entries of
+		// saved that are restored when this function returns.
+		c.unwinds = append([]unwindEntry(nil), saved[:i]...)
+
+		c.emit(bytecode.POP_BLOCK, 0)
+		switch e.kind {
+		case uwWith:
+			c.emit(bytecode.WITH_CLEANUP, 0)
+		case uwFinally:
+			c.compileBlock(e.finalbody)
+		}
 	}
 }
 
@@ -328,8 +411,11 @@ func (c *compiler) compileWithItems(items []*ast.WithItem, body []ast.Stmt) {
 		c.emit(bytecode.POP_TOP, 0)
 	}
 
-	// Nested remaining items (or the body for the last item).
+	// Nested remaining items (or the body for the last item), compiled inside
+	// the with region so an early exit calls __exit__.
+	c.unwinds = append(c.unwinds, unwindEntry{kind: uwWith})
 	c.compileWithItems(items[1:], body)
+	c.unwinds = c.unwinds[:len(c.unwinds)-1]
 
 	// Normal completion path.
 	c.emit(bytecode.POP_BLOCK, 0)

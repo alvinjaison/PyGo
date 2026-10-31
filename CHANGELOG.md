@@ -16,8 +16,8 @@ a tagged release; everything below is on the `main` branch (`Unreleased`).
 - Functions: defaults, `*args`, `**kwargs`, closures (`nonlocal`), lambdas,
   recursion, decorators.
 - Data types: `str` (with ~20 methods, slicing, f-strings), `bytes`, `list`
-  (with methods), `tuple`, `dict`, `set`; comprehensions and generator
-  expressions; generators (`yield`).
+  (with methods), `tuple`, `dict`, `set`; comprehensions; lazy generator
+  expressions; generators (`yield`) with `send()`, `throw()`, and `close()`.
 - Classes: single and multiple inheritance (C3 MRO), the full dunder protocol
   (arithmetic, comparison, container, iteration, `__call__`, `__bool__`,
   `__hash__`, `__str__`/`__repr__`), `@property`/`@classmethod`/`@staticmethod`,
@@ -52,8 +52,25 @@ a tagged release; everything below is on the `main` branch (`Unreleased`).
 - `WithRestrictedBuiltins()` for reduced-capability execution; `os` and other
   OS-capable modules are blocked in restricted mode.
 
+### Fixed
+
+- `finally` now runs when an exception propagates out of a `try`, and on
+  `return`, `break`, and `continue`. Previously it only ran when an `except`
+  clause had handled the exception.
+- A `try` statement's `else` clause no longer runs after an exception was
+  handled.
+- `with` now calls `__exit__` when the body exits via `return`, `break`, or
+  `continue`.
+- `break` out of a `for` loop no longer leaks the loop iterator on the value
+  stack. Enough of them used to overflow it and crash the VM.
+- `lambda` can now close over variables of an enclosing function.
+- `any()` and `all()` short-circuit, so they work on infinite generators.
+- Errors are classified accurately at the public API: a script that fails to
+  parse is a `SyntaxError`, a recovered interpreter panic is an `InternalError`,
+  and a missing file is returned as the underlying I/O error. Previously all of
+  these were reported as `SyntaxError`.
+
 ### Not yet implemented
 
-`async`/`await`, the `match` statement, lazy generator expressions, generator
-`.send()`/`.throw()`, `bytearray`, custom descriptors, metaclasses, and most
-of the remaining standard library.
+`async`/`await`, the `match` statement, `bytearray`, custom descriptors,
+metaclasses, and most of the remaining standard library.

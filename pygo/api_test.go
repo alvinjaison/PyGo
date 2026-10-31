@@ -3,6 +3,7 @@ package pygo_test
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"testing"
 	"time"
 
@@ -227,5 +228,27 @@ func TestPublicLimitAllowsNormal(t *testing.T) {
 	n, _ := v.Int()
 	if n != 4950 {
 		t.Errorf("got %d want 4950", n)
+	}
+}
+
+func TestPublicSyntaxErrorType(t *testing.T) {
+	rt := pygo.New()
+	err := rt.RunString("def broken(:\n    pass\n")
+	if !pygo.IsError(err, "SyntaxError") {
+		t.Errorf("expected SyntaxError, got %v", err)
+	}
+}
+
+func TestPublicMissingFileIsNotASyntaxError(t *testing.T) {
+	rt := pygo.New()
+	err := rt.RunFile("/nonexistent/definitely/missing.py")
+	if err == nil {
+		t.Fatal("expected an error for a missing file")
+	}
+	if pygo.IsError(err, "SyntaxError") {
+		t.Errorf("a missing file must not be reported as a SyntaxError: %v", err)
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("expected the underlying fs.ErrNotExist to be preserved, got %v", err)
 	}
 }

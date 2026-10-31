@@ -99,9 +99,7 @@ func (c *compiler) compileExpr(e ast.Expr) {
 		c.compileListComp(n)
 
 	case *ast.GeneratorExp:
-		// Eager approximation: build a list and let the consumer iterate it.
-		// (A fully lazy generator expression is a Phase 7 refinement.)
-		c.compileListComp(&ast.ListComp{Elt: n.Elt, Generators: n.Generators})
+		c.compileGeneratorExp(n)
 
 	case *ast.SetComp:
 		c.emit(bytecode.BUILD_SET, 0)

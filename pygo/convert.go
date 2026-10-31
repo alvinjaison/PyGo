@@ -7,7 +7,9 @@ import (
 	"math/big"
 	"reflect"
 
+	"github.com/alvinjaison/PyGo/internal/compiler"
 	"github.com/alvinjaison/PyGo/internal/object"
+	"github.com/alvinjaison/PyGo/internal/parser"
 	"github.com/alvinjaison/PyGo/internal/vm"
 )
 
@@ -43,8 +45,20 @@ func toPublicError(err error) error {
 	if errors.As(err, &le) {
 		return &Error{Type: "ResourceLimitError", Message: le.Message}
 	}
-	// Parser/compiler syntax errors and others become SyntaxError-ish values.
-	return &Error{Type: "SyntaxError", Message: err.Error()}
+	// A recovered interpreter panic: a PyGo bug, not a problem in the script.
+	var ie *vm.InternalError
+	if errors.As(err, &ie) {
+		return &Error{Type: "InternalError", Message: ie.Detail}
+	}
+	// Source that failed to lex, parse, or compile.
+	var pe *parser.Error
+	var ce *compiler.Error
+	if errors.As(err, &pe) || errors.As(err, &ce) {
+		return &Error{Type: "SyntaxError", Message: err.Error()}
+	}
+	// Anything else (for example a file that could not be read) is not a
+	// Python-level error; hand it back unchanged for the caller to inspect.
+	return err
 }
 
 // goToPython converts a Go value to a Python object.

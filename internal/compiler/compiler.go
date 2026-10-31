@@ -68,12 +68,46 @@ type compiler struct {
 	// loop stack for break/continue targets
 	loops []loopContext
 
+	// unwinds is the stack of protected regions (try, try/finally, with) that
+	// enclose the code currently being generated, innermost last.
+	unwinds []unwindEntry
+
 	err error
 }
 
 type loopContext struct {
 	continueTarget int   // jump target for `continue`
 	breakJumps     []int // patch locations for `break`
+
+	// isFor is true for `for` loops, whose iterator lives on the value stack
+	// and must be popped when the loop is left early with `break`.
+	isFor bool
+
+	// unwindDepth is len(compiler.unwinds) when the loop began: break/continue
+	// must unwind only the protected regions entered inside the loop body.
+	unwindDepth int
+}
+
+// unwindKind classifies a protected region that an early exit (return, break,
+// continue) must leave cleanly.
+type unwindKind int
+
+const (
+	// uwBlock is a try/except region: leaving it only requires POP_BLOCK.
+	uwBlock unwindKind = iota
+	// uwFinally is a try/finally region: leaving it pops the block and then
+	// runs the finally body inline.
+	uwFinally
+	// uwWith is a with statement: leaving it pops the block and calls
+	// __exit__(None, None, None).
+	uwWith
+)
+
+// unwindEntry records one enclosing protected region at the current point of
+// code generation.
+type unwindEntry struct {
+	kind      unwindKind
+	finalbody []ast.Stmt // for uwFinally: the statements to run on exit
 }
 
 // Compile compiles a module AST into a top-level Code object.

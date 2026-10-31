@@ -61,7 +61,7 @@ func (r *Runtime) installBuiltins() {
 		object.TypeAssertionError, object.TypeNotImplementedError, object.TypeOverflowError,
 		object.TypeOSError, object.TypeImportError, object.TypeModuleNotFoundError,
 		object.TypeKeyboardInterrupt, object.TypeSystemExit, object.TypeUnboundLocalError,
-		object.TypeRecursionError,
+		object.TypeRecursionError, object.TypeGeneratorExit,
 		object.ExceptionType, object.BaseExceptionType,
 	} {
 		_ = r.builtins.SetItem(object.StrFrom(t.Name()), t)
@@ -520,29 +520,44 @@ func biReversed(args []object.Object, _ map[string]object.Object) (object.Object
 }
 
 func biAny(args []object.Object, _ map[string]object.Object) (object.Object, error) {
-	items, err := iterateAll(args[0])
-	if err != nil {
-		return nil, err
-	}
-	for _, it := range items {
-		if t, _ := object.IsTruthy(it); t {
-			return object.PyTrue, nil
-		}
-	}
-	return object.PyFalse, nil
+	return anyAll(args, true)
 }
 
 func biAll(args []object.Object, _ map[string]object.Object) (object.Object, error) {
-	items, err := iterateAll(args[0])
+	return anyAll(args, false)
+}
+
+// anyAll implements any() (wantTrue) and all() lazily: it pulls items one at a
+// time and stops at the first deciding element, so it works on infinite
+// iterators and generators.
+func anyAll(args []object.Object, wantTrue bool) (object.Object, error) {
+	if len(args) != 1 {
+		return nil, object.NewTypeError("expected 1 argument, got %d", len(args))
+	}
+	it, err := object.GetIter(args[0])
 	if err != nil {
 		return nil, err
 	}
-	for _, it := range items {
-		if t, _ := object.IsTruthy(it); !t {
+	for {
+		v, err := it.Next()
+		if object.IsStopIteration(err) {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		truthy, terr := object.IsTruthy(v)
+		if terr != nil {
+			return nil, terr
+		}
+		if wantTrue && truthy {
+			return object.PyTrue, nil
+		}
+		if !wantTrue && !truthy {
 			return object.PyFalse, nil
 		}
 	}
-	return object.PyTrue, nil
+	return object.BoolFrom(!wantTrue), nil
 }
 
 // sortStable is a simple insertion sort (stable) over Objects using less.

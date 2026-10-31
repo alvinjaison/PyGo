@@ -219,6 +219,19 @@ func (v refVisitor) Visit(node ast.Node) ast.Visitor {
 		markCaptured(n.Args, n.Body, v.st)
 		return nil
 	case *ast.Lambda:
+		// A lambda is an anonymous function whose body is a single return.
+		body := []ast.Stmt{ast.SetPos(&ast.Return{Value: n.Body}, n.Pos())}
+		markCaptured(n.Args, body, v.st)
+		return nil
+	case *ast.GeneratorExp:
+		// A generator expression compiles to a nested generator function, so
+		// its free names are captured the same way. The first iterable is
+		// evaluated in this scope, so it is walked normally.
+		if len(n.Generators) > 0 {
+			args, body := genexpFunction(n.Elt, n.Generators, n.Pos())
+			markCaptured(args, body, v.st)
+			ast.Walk(v, n.Generators[0].Iter)
+		}
 		return nil
 	}
 	return v

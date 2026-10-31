@@ -186,7 +186,7 @@ func (v *VM) Run(frame *Frame) (result object.Object, err error) {
 			if debugPanics {
 				panic(r)
 			}
-			err = fmt.Errorf("internal VM error: %v", r)
+			err = &InternalError{Detail: fmt.Sprint(r)}
 		}
 	}()
 
@@ -267,7 +267,7 @@ func (v *VM) runFrame(frame *Frame) (value object.Object, yielded bool, err erro
 			if debugPanics {
 				panic(r)
 			}
-			err = fmt.Errorf("internal VM error: %v", r)
+			err = &InternalError{Detail: fmt.Sprint(r)}
 		}
 	}()
 
@@ -280,6 +280,19 @@ func (v *VM) runFrame(frame *Frame) (value object.Object, yielded bool, err erro
 	if v.depth > v.maxDepth {
 		return nil, false, object.NewException(object.TypeRecursionError,
 			fmt.Sprintf("maximum recursion depth exceeded (%d)", v.maxDepth))
+	}
+
+	// generator.throw()/close(): raise the exception at the suspension point
+	// before executing any further instructions.
+	if exc := frame.pendingThrow; exc != nil {
+		frame.pendingThrow = nil
+		handled, propagate := v.unwind(frame, exc)
+		if !handled {
+			if propagate.Traceback == nil {
+				propagate.Traceback = frame.Traceback()
+			}
+			return nil, false, propagate
+		}
 	}
 
 	for {

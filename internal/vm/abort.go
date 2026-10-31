@@ -100,3 +100,12 @@ func isAbort(err error) bool {
 
 // ensure object import is retained for future abort helpers
 var _ = object.None
+
+// InternalError reports a bug in the interpreter itself: a Go panic that was
+// recovered at the VM boundary so it cannot crash the host application. It is
+// distinct from a Python exception and from a user's syntax error.
+type InternalError struct {
+	Detail string
+}
+
+func (e *InternalError) Error() string { return "internal VM error: " + e.Detail }

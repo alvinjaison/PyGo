@@ -108,10 +108,21 @@ func SetDebugPanics(v bool) { debugPanics = v }
 // the frame returns.
 func (v *VM) makeGenerator(name string, frame *Frame) *object.GeneratorObject {
 	done := false
-	return object.NewGenerator(name, func() (object.Object, bool, error) {
+	return object.NewGenerator(name, func(r object.GenResume) (object.Object, bool, error) {
 		if done {
 			return nil, false, nil
 		}
+		if frame.genStarted {
+			// The frame is suspended at a yield, whose result (a placeholder
+			// None) is on top of the stack. Deliver a sent value there, or
+			// schedule an exception to be raised at that point.
+			if r.Throw != nil {
+				frame.pendingThrow = r.Throw
+			} else if r.Send != nil && frame.StackTop > 0 {
+				frame.Stack[frame.StackTop-1] = r.Send
+			}
+		}
+		frame.genStarted = true
 		val, yielded, err := v.runFrame(frame)
 		if err != nil {
 			done = true

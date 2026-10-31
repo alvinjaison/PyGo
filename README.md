@@ -77,9 +77,9 @@ and scripting, though not yet a complete CPython replacement.
 - Hardening: enforceable instruction, memory, recursion, and timeout limits
   for running untrusted code.
 
-**Not yet implemented:** `async`/`await`, the `match` statement, lazy
-generator expressions, generator `.send()`/`.throw()`, `bytearray`, custom
-descriptors and metaclasses, and most of the remaining standard library.
+**Not yet implemented:** `async`/`await`, the `match` statement, `bytearray`,
+custom descriptors and metaclasses, and most of the remaining standard
+library.
 
 See [docs/roadmap.md](docs/roadmap.md) and the full
 [compatibility matrix](docs/compatibility.md) for details.

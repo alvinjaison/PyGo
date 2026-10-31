@@ -30,7 +30,7 @@ test suite:
 - **Strings:** ~20 methods (`upper`/`split`/`join`/`replace`/`format`/…),
   f-strings (interpolation, nested expressions, `{{`/`}}`), escapes,
   triple-quotes, iteration.
-- **Comprehensions:** list/set/dict comprehensions and generator expressions.
+- **Comprehensions:** list/set/dict comprehensions and lazy generator expressions.
 - **Generators:** `yield` with real frame suspension/resumption.
 - **Classes:** definition, `__init__`, methods, single/multiple inheritance
   (C3 MRO), bound methods.
@@ -75,8 +75,7 @@ test suite:
 - **`super()`:** zero-argument and two-argument forms, cooperative through the
   MRO (including diamond inheritance).
 
-Not yet implemented: lazy generator expressions, `.send()`/`throw()`, keyword
-fields in `str.format()`, `bytearray`, custom descriptors (`__get__`/`__set__`),
+Not yet implemented: keyword fields in `str.format()`, `bytearray`, custom descriptors (`__get__`/`__set__`),
 metaclasses, `match`, async/await, and most of the remaining standard library.
 
 ---
@@ -362,10 +361,10 @@ This document categorizes every significant Python 3 language and runtime featur
 | Custom `__iter__` / `__next__` | Post-MVP | |
 | `StopIteration` | MVP | |
 | Generator functions (`yield`) | Post-MVP | Phase 2+ |
-| Generator expressions | Post-MVP | |
+| Generator expressions | **Implemented** | lazy; compiled to a nested generator |
 | `yield from` (delegation) | Future | |
-| `send()` to generators | Future | |
-| `throw()` / `close()` on generators | Future | |
+| `send()` to generators | **Implemented** | |
+| `throw()` / `close()` on generators | **Implemented** | `close()` raises `GeneratorExit` |
 | `iter()` built-in | Post-MVP | |
 | `next()` built-in | Post-MVP | |
 
@@ -378,7 +377,7 @@ This document categorizes every significant Python 3 language and runtime featur
 | List comprehensions | Post-MVP | |
 | Dict comprehensions | Post-MVP | |
 | Set comprehensions | Post-MVP | |
-| Generator expressions | Post-MVP | |
+| Generator expressions | **Implemented** | lazy; compiled to a nested generator |
 | Nested comprehensions | Post-MVP | |
 | Multiple `for` clauses in comprehension | Post-MVP | |
 | `if` filter in comprehension | Post-MVP | |

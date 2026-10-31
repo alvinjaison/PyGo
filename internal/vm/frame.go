@@ -62,6 +62,14 @@ type Frame struct {
 	// following WITH_CLEANUP can invoke its __exit__ on the normal path.
 	lastPoppedWith *Block
 
+	// genStarted reports whether a generator frame has run at least once, so
+	// the top of its stack is the placeholder pushed by YIELD_VALUE.
+	genStarted bool
+
+	// pendingThrow is an exception to raise inside a generator frame at its
+	// suspension point the next time it is resumed (generator.throw/close).
+	pendingThrow *object.ExceptionObject
+
 	// Yielded is true when this frame has yielded and is suspended.
 	// Used for generator frames.
 	Yielded bool

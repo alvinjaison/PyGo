@@ -640,6 +640,13 @@ func (v *VM) execute(f *Frame, instr bytecode.Instruction) (object.Object, error
 		}
 		f.Push(result)
 
+	// ---- Structural pattern matching and extended unpacking ----
+
+	case bytecode.MATCH_SEQ, bytecode.MATCH_SEQ_LEN, bytecode.MATCH_MAPPING,
+		bytecode.MATCH_KEY, bytecode.MATCH_REST, bytecode.MATCH_CLASS,
+		bytecode.UNPACK_EX:
+		return nil, v.execMatchOp(f, instr)
+
 	// ---- Jumps ----
 
 	case bytecode.JUMP_ABSOLUTE:

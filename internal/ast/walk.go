@@ -111,6 +111,45 @@ func walkChildren(v Visitor, node Node) {
 		}
 		walkStmts(v, n.Body)
 
+	case *Match:
+		Walk(v, n.Subject)
+		for _, c := range n.Cases {
+			Walk(v, c)
+		}
+
+	case *MatchCase:
+		Walk(v, n.Pattern)
+		if n.Guard != nil {
+			Walk(v, n.Guard)
+		}
+		walkStmts(v, n.Body)
+
+	case *MatchValue:
+		Walk(v, n.Value)
+
+	case *MatchSequence:
+		walkPatterns(v, n.Patterns)
+
+	case *MatchMapping:
+		walkExprs(v, n.Keys)
+		walkPatterns(v, n.Patterns)
+
+	case *MatchClass:
+		Walk(v, n.Cls)
+		walkPatterns(v, n.Patterns)
+		walkPatterns(v, n.KwdPatterns)
+
+	case *MatchAs:
+		if n.Pattern != nil {
+			Walk(v, n.Pattern)
+		}
+
+	case *MatchOr:
+		walkPatterns(v, n.Patterns)
+
+	case *MatchSingleton, *MatchStar:
+		// no children
+
 	case *Import:
 		// no children to walk
 
@@ -236,6 +275,12 @@ func walkChildren(v Visitor, node Node) {
 func walkStmts(v Visitor, stmts []Stmt) {
 	for _, s := range stmts {
 		Walk(v, s)
+	}
+}
+
+func walkPatterns(v Visitor, pats []Pattern) {
+	for _, p := range pats {
+		Walk(v, p)
 	}
 }
 

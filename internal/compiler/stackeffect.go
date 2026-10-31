@@ -33,6 +33,19 @@ func stackEffect(in bytecode.Instruction) int {
 	case bytecode.DUP_TOP_TWO:
 		return 2
 
+	case bytecode.UNPACK_SEQUENCE:
+		return int(in.Arg) - 1
+
+	case bytecode.UNPACK_EX:
+		return int(in.Arg&bytecode.UnpackBeforeMask) + int(in.Arg>>bytecode.UnpackAfterShift)
+
+	case bytecode.MATCH_SEQ, bytecode.MATCH_SEQ_LEN, bytecode.MATCH_MAPPING,
+		bytecode.MATCH_KEY:
+		return 1
+
+	case bytecode.MATCH_CLASS:
+		return -1
+
 	case bytecode.BUILD_LIST, bytecode.BUILD_TUPLE, bytecode.BUILD_SET:
 		return 1 - int(in.Arg)
 

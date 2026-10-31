@@ -47,11 +47,20 @@ type BuiltinFuncObject struct {
 	Name string
 	Doc  string
 	Fn   func(args []Object, kwargs map[string]Object) (Object, error)
+
+	// Class is set for built-in constructors such as int and str, which stand
+	// for a type: isinstance(x, int) and class patterns use it.
+	Class *TypeObject
 }
 
 func (b *BuiltinFuncObject) Type() *TypeObject { return BuiltinFunctionType }
-func (b *BuiltinFuncObject) String() string    { return fmt.Sprintf("<built-in function %s>", b.Name) }
-func (b *BuiltinFuncObject) Repr() string      { return b.String() }
+func (b *BuiltinFuncObject) String() string {
+	if b.Class != nil {
+		return fmt.Sprintf("<class '%s'>", b.Class.Name())
+	}
+	return fmt.Sprintf("<built-in function %s>", b.Name)
+}
+func (b *BuiltinFuncObject) Repr() string { return b.String() }
 func (b *BuiltinFuncObject) Call(args []Object, kwargs map[string]Object) (Object, error) {
 	return b.Fn(args, kwargs)
 }

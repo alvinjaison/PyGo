@@ -231,12 +231,18 @@ func (l *Lexer) scanIndent() Token {
 // when we are not inside parentheses/brackets/braces.
 func (l *Lexer) scanNewline() Token {
 	start := l.pos
+	// The NEWLINE token belongs to the line it ends, not the next one.
+	nlLine, nlCol := l.line, l.col
 	if l.src[l.pos] == '\r' && l.pos+1 < len(l.src) && l.src[l.pos+1] == '\n' {
-		l.advance() // CR
+		l.advance() // CR of a CRLF pair; the LF below counts the line
 	}
+	wasLF := l.src[l.pos] == '\n'
 	l.advance() // LF or lone CR
-	l.line++
-	l.col = 1
+	if !wasLF {
+		// advance() only counts lines on '\n'; a lone CR ends a line too.
+		l.line++
+		l.col = 1
+	}
 
 	if l.parenDepth > 0 {
 		// Inside brackets: suppress NEWLINE, continue scanning.
@@ -245,7 +251,9 @@ func (l *Lexer) scanNewline() Token {
 
 	l.atLineStart = true
 	_ = start
-	return l.makeToken(NEWLINE, "\n")
+	tok := l.makeToken(NEWLINE, "\n")
+	tok.Line, tok.Col = nlLine, nlCol
+	return tok
 }
 
 // emitEOF emits the closing token sequence at end of input: a final NEWLINE

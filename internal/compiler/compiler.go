@@ -68,6 +68,10 @@ type compiler struct {
 	// loop stack for break/continue targets
 	loops []loopContext
 
+	// stackExtra is additional value-stack headroom required by code whose
+	// depth the linear estimate cannot see (pattern matching).
+	stackExtra int
+
 	// unwinds is the stack of protected regions (try, try/finally, with) that
 	// enclose the code currently being generated, innermost last.
 	unwinds []unwindEntry
@@ -118,6 +122,7 @@ func Compile(mod *ast.Module, filename string) (*bytecode.Code, error) {
 		filename:  filename,
 		symbols:   buildSymtable(mod),
 		firstLine: 1,
+		lastLine:  1,
 	}
 	for _, stmt := range mod.Body {
 		c.compileStmt(stmt)
@@ -140,6 +145,7 @@ func CompileExpression(expr ast.Expr, filename string) (*bytecode.Code, error) {
 		filename:  filename,
 		symbols:   newSymtable(),
 		firstLine: 1,
+		lastLine:  1,
 	}
 	c.compileExpr(expr)
 	c.emit(bytecode.RETURN_VALUE, 0)
@@ -273,11 +279,12 @@ func (c *compiler) freeIndex(name string) (uint32, bool) {
 // ============================================================
 
 func (c *compiler) assemble() *bytecode.Code {
-	stackSize := estimateStackSize(c.instrs)
+	stackSize := estimateStackSize(c.instrs) + c.stackExtra
 	return &bytecode.Code{
 		Name:           c.name,
 		Filename:       c.filename,
 		FirstLine:      c.firstLine,
+		LineTable:      c.lineTable,
 		Instructions:   c.instrs,
 		Constants:      c.constants,
 		Names:          c.names,

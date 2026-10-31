@@ -3,6 +3,7 @@ package runtime
 import (
 	"fmt"
 	"math/big"
+	"sort"
 	"strings"
 
 	"github.com/alvinjaison/PyGo/internal/object"
@@ -15,6 +16,23 @@ func (r *Runtime) installBuiltins() {
 	reg := func(name string, fn func([]object.Object, map[string]object.Object) (object.Object, error)) {
 		_ = r.builtins.SetItem(object.StrFrom(name), object.NewBuiltin(name, fn))
 	}
+
+	// regType registers a type constructor. The resulting callable stands for
+	// its type in isinstance() and class patterns.
+	regType := func(name string, class *object.TypeObject, fn func([]object.Object, map[string]object.Object) (object.Object, error)) {
+		b := object.NewBuiltin(name, fn)
+		b.Class = class
+		_ = r.builtins.SetItem(object.StrFrom(name), b)
+	}
+	regType("str", object.StrType, biStr)
+	regType("int", object.IntType, biInt)
+	regType("float", object.FloatType, biFloat)
+	regType("bool", object.BoolType, biBool)
+	regType("list", object.ListType, biList)
+	regType("tuple", object.TupleType, biTuple)
+	regType("bytes", object.BytesType, biBytes)
+	regType("dict", object.DictType, biDict)
+	regType("set", object.SetType, biSet)
 
 	reg("print", r.biPrint)
 	reg("len", biLen)
@@ -29,13 +47,6 @@ func (r *Runtime) installBuiltins() {
 	reg("any", biAny)
 	reg("all", biAll)
 	reg("repr", biRepr)
-	reg("str", biStr)
-	reg("int", biInt)
-	reg("float", biFloat)
-	reg("bool", biBool)
-	reg("list", biList)
-	reg("tuple", biTuple)
-	reg("bytes", biBytes)
 	reg("type", biType)
 	reg("isinstance", biIsInstance)
 	reg("chr", biChr)
@@ -235,6 +246,67 @@ func biTuple(args []object.Object, _ map[string]object.Object) (object.Object, e
 	return object.NewTuple(items), nil
 }
 
+// biDict implements dict(), dict(mapping), dict(iterable_of_pairs) and
+// dict(**kwargs).
+func biDict(args []object.Object, kwargs map[string]object.Object) (object.Object, error) {
+	if len(args) > 1 {
+		return nil, object.NewTypeError("dict expected at most 1 argument, got %d", len(args))
+	}
+	d := object.NewDict()
+	if len(args) == 1 {
+		if src, ok := args[0].(*object.DictObject); ok {
+			for _, k := range src.Keys() {
+				v, _ := src.GetItem(k)
+				if err := d.SetItem(k, v); err != nil {
+					return nil, err
+				}
+			}
+		} else {
+			items, err := iterateAll(args[0])
+			if err != nil {
+				return nil, err
+			}
+			for _, item := range items {
+				pair, err := iterateAll(item)
+				if err != nil || len(pair) != 2 {
+					return nil, object.NewValueError("dictionary update sequence element must have length 2")
+				}
+				if err := d.SetItem(pair[0], pair[1]); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+	// Keyword order is not preserved by the call machinery, so sort for a
+	// deterministic result.
+	names := make([]string, 0, len(kwargs))
+	for k := range kwargs {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	for _, k := range names {
+		if err := d.SetItem(object.StrFrom(k), kwargs[k]); err != nil {
+			return nil, err
+		}
+	}
+	return d, nil
+}
+
+// biSet implements set() and set(iterable).
+func biSet(args []object.Object, _ map[string]object.Object) (object.Object, error) {
+	if len(args) > 1 {
+		return nil, object.NewTypeError("set expected at most 1 argument, got %d", len(args))
+	}
+	if len(args) == 0 {
+		return object.NewSet(), nil
+	}
+	items, err := iterateAll(args[0])
+	if err != nil {
+		return nil, err
+	}
+	return object.NewSetFrom(items)
+}
+
 func biType(args []object.Object, _ map[string]object.Object) (object.Object, error) {
 	if len(args) != 1 {
 		return nil, object.NewTypeError("type() takes 1 argument")
@@ -247,18 +319,23 @@ func biIsInstance(args []object.Object, _ map[string]object.Object) (object.Obje
 		return nil, object.NewTypeError("isinstance expected 2 arguments")
 	}
 	obj := args[0]
-	switch cls := args[1].(type) {
-	case *object.TypeObject:
-		return object.BoolFrom(obj.Type().IsSubtype(cls)), nil
-	case *object.TupleObject:
-		for _, item := range cls.Items {
-			if t, ok := item.(*object.TypeObject); ok && obj.Type().IsSubtype(t) {
+	if tup, ok := args[1].(*object.TupleObject); ok {
+		for _, item := range tup.Items {
+			is, usable := object.IsInstanceOfClass(obj, item)
+			if !usable {
+				return nil, object.NewTypeError("isinstance() arg 2 must be a type or tuple of types")
+			}
+			if is {
 				return object.PyTrue, nil
 			}
 		}
 		return object.PyFalse, nil
 	}
-	return nil, object.NewTypeError("isinstance() arg 2 must be a type or tuple of types")
+	is, usable := object.IsInstanceOfClass(obj, args[1])
+	if !usable {
+		return nil, object.NewTypeError("isinstance() arg 2 must be a type or tuple of types")
+	}
+	return object.BoolFrom(is), nil
 }
 
 func biChr(args []object.Object, _ map[string]object.Object) (object.Object, error) {

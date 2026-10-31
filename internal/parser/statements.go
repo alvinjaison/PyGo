@@ -55,6 +55,13 @@ func (p *Parser) parseStatement() ast.Stmt {
 		return p.parseAssert()
 	case lexer.AT:
 		return p.parseDecorated()
+	case lexer.NAME:
+		// "match" is a soft keyword: only a match statement when the line and
+		// the block that follows have the right shape.
+		if p.looksLikeMatch() {
+			return p.parseMatch()
+		}
+		return p.parseSimpleStatement()
 	default:
 		return p.parseSimpleStatement()
 	}

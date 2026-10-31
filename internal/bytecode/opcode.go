@@ -180,6 +180,22 @@ const (
 	// Unpack
 	UNPACK_SEQUENCE Opcode = 92
 	UNPACK_EX       Opcode = 94
+
+	// Structural pattern matching. Each tests the value on top of the stack
+	// without consuming it, unless stated otherwise.
+	MATCH_SEQ     Opcode = 31 // push True if TOS is a list/tuple (not str/bytes)
+	MATCH_SEQ_LEN Opcode = 32 // arg = n<<1|star; push len==n (len>=n if star)
+	MATCH_MAPPING Opcode = 33 // push True if TOS is a mapping
+	MATCH_KEY     Opcode = 34 // pop key; if in mapping TOS push value, True; else push False
+	MATCH_REST    Opcode = 35 // pop tuple of keys; push copy of mapping TOS without them
+	MATCH_CLASS   Opcode = 36 // arg = positional count; pop kwnames, cls, subject; push attrs tuple, True | False
+)
+
+// UNPACK_EX argument layout: the number of targets before the starred target
+// in the low byte and the number after it in the next byte.
+const (
+	UnpackBeforeMask = 0xFF
+	UnpackAfterShift = 8
 )
 
 // CompareOp identifies the comparison operator for COMPARE_OP.
@@ -323,6 +339,13 @@ var opInfos = map[Opcode]OpInfo{
 
 	UNPACK_SEQUENCE: {"UNPACK_SEQUENCE", true},
 	UNPACK_EX:       {"UNPACK_EX", true},
+
+	MATCH_SEQ:     {"MATCH_SEQ", false},
+	MATCH_SEQ_LEN: {"MATCH_SEQ_LEN", true},
+	MATCH_MAPPING: {"MATCH_MAPPING", false},
+	MATCH_KEY:     {"MATCH_KEY", false},
+	MATCH_REST:    {"MATCH_REST", false},
+	MATCH_CLASS:   {"MATCH_CLASS", true},
 
 	EXTENDED_ARG: {"EXTENDED_ARG", true},
 	PRINT_EXPR:   {"PRINT_EXPR", false},

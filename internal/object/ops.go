@@ -140,14 +140,14 @@ func unaryOp(val Object, op string) (Object, error) {
 		if s.Pos != nil {
 			return s.Pos(val)
 		}
-		return val, nil
 	case "~":
 		if s.Invert != nil {
 			return s.Invert(val)
 		}
 	}
-	// Fallback: integer unary ops on IntObject directly.
-	if n, ok := val.(*IntObject); ok {
+	// Fallback: unary ops on the built-in numeric types directly.
+	switch n := val.(type) {
+	case *IntObject:
 		switch op {
 		case "-":
 			return IntFromBig(new(big.Int).Neg(n.Value)), nil
@@ -157,8 +157,29 @@ func unaryOp(val Object, op string) (Object, error) {
 			result := new(big.Int).Not(n.Value)
 			return IntFromBig(result), nil
 		}
+	case *FloatObject:
+		switch op {
+		case "-":
+			return FloatFrom(-n.Value), nil
+		case "+":
+			return val, nil
+		}
+	case *BoolObject:
+		// bool is an int subclass: the result is an int.
+		i := int64(0)
+		if n.Value {
+			i = 1
+		}
+		switch op {
+		case "-":
+			return IntFrom(-i), nil
+		case "+":
+			return IntFrom(i), nil
+		case "~":
+			return IntFrom(^i), nil
+		}
 	}
-	return nil, fmt.Errorf("TypeError: bad operand type for unary %s: '%s'", op, val.Type().Name())
+	return nil, NewTypeError("bad operand type for unary %s: '%s'", op, val.Type().Name())
 }
 
 // compareObjects performs a Python comparison operation.
@@ -173,6 +194,16 @@ func compareObjects(left, right Object, op bytecode.CompareOp) (Object, error) {
 	}
 	if op == bytecode.CmpIsNot {
 		return BoolFrom(left != right), nil
+	}
+
+	// Classes compare by the type they stand for, so type(1) == int holds even
+	// though the name `int` is bound to a constructor callable.
+	if op == bytecode.CmpEq || op == bytecode.CmpNotEq {
+		if lc, ok := AsClass(left); ok {
+			if rc, ok := AsClass(right); ok {
+				return BoolFrom((lc == rc) == (op == bytecode.CmpEq)), nil
+			}
+		}
 	}
 
 	// Membership tests.

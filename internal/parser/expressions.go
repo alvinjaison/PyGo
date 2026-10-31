@@ -33,7 +33,7 @@ const (
 // if more than one element is present. Used for return values and assignments.
 func (p *Parser) parseExprList() ast.Expr {
 	pos := p.pos()
-	first := p.parseExpr()
+	first := p.parseExprOrStar()
 	if !p.check(lexer.COMMA) {
 		return first
 	}
@@ -42,7 +42,7 @@ func (p *Parser) parseExprList() ast.Expr {
 		if p.isExprEnd() {
 			break
 		}
-		elts = append(elts, p.parseExpr())
+		elts = append(elts, p.parseExprOrStar())
 	}
 	return ast.SetPos(&ast.Tuple{Elts: elts, Ctx: ast.Load}, pos)
 }
@@ -52,7 +52,7 @@ func (p *Parser) parseExprList() ast.Expr {
 // commas are present (supporting `a, b = ...` unpacking and `a, b` tuples).
 func (p *Parser) parseExprListNoTrailing() ast.Expr {
 	pos := p.pos()
-	first := p.parseExpr()
+	first := p.parseExprOrStar()
 	if !p.check(lexer.COMMA) {
 		return first
 	}
@@ -61,9 +61,20 @@ func (p *Parser) parseExprListNoTrailing() ast.Expr {
 		if p.isExprEnd() {
 			break
 		}
-		elts = append(elts, p.parseExpr())
+		elts = append(elts, p.parseExprOrStar())
 	}
 	return ast.SetPos(&ast.Tuple{Elts: elts, Ctx: ast.Load}, pos)
+}
+
+// parseExprOrStar parses an expression, or a starred element (*name) as used
+// in tuple targets such as `first, *rest = items`.
+func (p *Parser) parseExprOrStar() ast.Expr {
+	if p.check(lexer.STAR) {
+		pos := p.pos()
+		p.advance()
+		return ast.SetPos(&ast.Starred{Value: p.parseBinary(0), Ctx: ast.Load}, pos)
+	}
+	return p.parseExpr()
 }
 
 func (p *Parser) isExprEnd() bool {

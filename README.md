@@ -77,9 +77,8 @@ and scripting, though not yet a complete CPython replacement.
 - Hardening: enforceable instruction, memory, recursion, and timeout limits
   for running untrusted code.
 
-**Not yet implemented:** `async`/`await`, the `match` statement, `bytearray`,
-custom descriptors and metaclasses, and most of the remaining standard
-library.
+**Not yet implemented:** `async`/`await`, `bytearray`, custom descriptors and
+metaclasses, and most of the remaining standard library.
 
 See [docs/roadmap.md](docs/roadmap.md) and the full
 [compatibility matrix](docs/compatibility.md) for details.
@@ -289,10 +288,11 @@ PyGo targets **Python 3 language compatibility**. It does not aim for CPython AB
 | f-strings | ✅ |
 | Classes, inheritance, dunders, `super()`, properties | ✅ |
 | Generators, comprehensions, generator expressions | ✅ |
+| Structural pattern matching (`match` / `case`) | ✅ |
 | Context managers (`with`, exception-safe) | ✅ |
 | Standard library (math, json, re, os, datetime, …) | ✅ (subset) |
 | Execution limits (instructions, memory, timeout) | ✅ |
-| async/await, `match`, metaclasses | ❌ not yet |
+| async/await, metaclasses | ❌ not yet |
 
 Full matrix: [docs/compatibility.md](docs/compatibility.md)
 

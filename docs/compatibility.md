@@ -76,7 +76,14 @@ test suite:
   MRO (including diamond inheritance).
 
 Not yet implemented: keyword fields in `str.format()`, `bytearray`, custom descriptors (`__get__`/`__set__`),
-metaclasses, `match`, async/await, and most of the remaining standard library.
+metaclasses, async/await, and most of the remaining standard library.
+
+Known gaps in the built-in namespace (each raises `NameError` today): `object`
+(so `class A(object):` fails), `zip`, `map`, `filter`, `divmod`, `pow`,
+`callable`, `issubclass`, `frozenset`, `slice`, `complex`, `format`, `bin`,
+`hex`, `oct`, `id`, `dir`, `vars`, `globals`, `locals`, `delattr`, `input` and
+`open`. Equality between `set` objects (`{1, 2} == {1, 2}`) is also not
+implemented yet.
 
 ---
 
@@ -154,6 +161,7 @@ This document categorizes every significant Python 3 language and runtime featur
 | `list` mutation (append, insert, remove, etc.) | MVP | |
 | `tuple` creation, indexing, slicing | MVP | |
 | `tuple` unpacking | MVP | |
+| Star-unpacking assignment (`a, *rest = xs`) | MVP | |
 | `dict` creation, access, mutation | MVP | |
 | `dict` insertion-order preservation (3.7+) | MVP | |
 | `dict` merge operators (`\|`, `\|=`) (3.9+) | Future | |
@@ -182,7 +190,7 @@ This document categorizes every significant Python 3 language and runtime featur
 | `for` over iterables | MVP | |
 | `for` over `range` | MVP | |
 | Ternary expression (`x if c else y`) | MVP | |
-| `match` / `case` (structural pattern matching, 3.10+) | Complex | Non-trivial compiler work |
+| `match` / `case` (structural pattern matching, 3.10+) | Complex | Implemented: literal, capture, wildcard, value, `or`, `as`, sequence (with `*rest`), mapping (with `**rest`) and class patterns, guards, `__match_args__`. Not supported: complex-number literals (`1+2j`); user subclasses of `list`/`dict` are not matched as sequences/mappings |
 
 ---
 

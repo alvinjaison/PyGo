@@ -74,6 +74,17 @@ func (f *NamedTupleFactory) Call(args []object.Object, kwargs map[string]object.
 	return &NamedTupleInstance{factory: f, values: values}, nil
 }
 
+// IsInstance reports whether obj was built by this factory. It makes the
+// factory usable in isinstance() and class patterns.
+func (f *NamedTupleFactory) IsInstance(obj object.Object) bool {
+	nt, ok := obj.(*NamedTupleInstance)
+	return ok && nt.factory == f
+}
+
+// MatchArgs returns the field names, used for positional class patterns such
+// as `case Point(x, y):`.
+func (f *NamedTupleFactory) MatchArgs() []string { return f.fields }
+
 // GetAttr exposes _fields on the factory.
 func (f *NamedTupleFactory) GetAttr(name string) (object.Object, error) {
 	switch name {
@@ -118,7 +129,10 @@ func (nt *NamedTupleInstance) Repr() string {
 	b.WriteByte(')')
 	return b.String()
 }
-func (nt *NamedTupleInstance) Len() int              { return len(nt.values) }
+func (nt *NamedTupleInstance) Len() int { return len(nt.values) }
+
+// IsMatchSequence lets sequence patterns match named tuples, as they do tuples.
+func (nt *NamedTupleInstance) IsMatchSequence()      {}
 func (nt *NamedTupleInstance) IsTrue() (bool, error) { return len(nt.values) > 0, nil }
 
 // GetItem supports positional indexing (nt[0]).

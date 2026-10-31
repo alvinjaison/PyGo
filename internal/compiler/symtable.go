@@ -140,6 +140,11 @@ func collectAssigned(s ast.Stmt, st *symtable) {
 			}
 		}
 		collectAssignedBlock(n.Body, st)
+	case *ast.Match:
+		for _, cs := range n.Cases {
+			collectPatternNames(cs.Pattern, st)
+			collectAssignedBlock(cs.Body, st)
+		}
 	case *ast.Try:
 		collectAssignedBlock(n.Body, st)
 		for _, h := range n.Handlers {
@@ -254,6 +259,14 @@ func markCaptured(args *ast.Arguments, body []ast.Stmt, parent *symtable) {
 	}
 	for _, s := range body {
 		collectAssigned(s, inner)
+		collectDeclarations(s, inner)
+	}
+	// A name the nested function declares nonlocal lives in the parent's cell
+	// even when the nested function only assigns it and never reads it.
+	for name := range inner.declNonlocal {
+		if parent.assigned[name] {
+			parent.capturedByChild[name] = true
+		}
 	}
 	for _, s := range body {
 		ast.Walk(capVisitor{inner: inner, parent: parent}, s)
@@ -307,6 +320,49 @@ func collectDeclarations(s ast.Stmt, st *symtable) {
 		collectDeclBlock(n.Finalbody, st)
 	case *ast.With:
 		collectDeclBlock(n.Body, st)
+	case *ast.Match:
+		for _, cs := range n.Cases {
+			collectDeclBlock(cs.Body, st)
+		}
+	}
+}
+
+// collectPatternNames records the names a match pattern binds as assigned.
+func collectPatternNames(p ast.Pattern, st *symtable) {
+	switch n := p.(type) {
+	case *ast.MatchAs:
+		if n.Pattern != nil {
+			collectPatternNames(n.Pattern, st)
+		}
+		if n.Name != "" {
+			st.assigned[n.Name] = true
+		}
+	case *ast.MatchStar:
+		if n.Name != "" {
+			st.assigned[n.Name] = true
+		}
+	case *ast.MatchSequence:
+		for _, sp := range n.Patterns {
+			collectPatternNames(sp, st)
+		}
+	case *ast.MatchMapping:
+		for _, sp := range n.Patterns {
+			collectPatternNames(sp, st)
+		}
+		if n.Rest != "" {
+			st.assigned[n.Rest] = true
+		}
+	case *ast.MatchClass:
+		for _, sp := range n.Patterns {
+			collectPatternNames(sp, st)
+		}
+		for _, sp := range n.KwdPatterns {
+			collectPatternNames(sp, st)
+		}
+	case *ast.MatchOr:
+		for _, sp := range n.Patterns {
+			collectPatternNames(sp, st)
+		}
 	}
 }
 

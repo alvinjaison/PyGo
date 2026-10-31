@@ -114,6 +114,9 @@ func (c *compiler) compileStmt(s ast.Stmt) {
 	case *ast.With:
 		c.compileWith(n)
 
+	case *ast.Match:
+		c.compileMatch(n)
+
 	default:
 		c.fail(s.Pos().Line, "unsupported statement %T", s)
 	}
@@ -451,9 +454,38 @@ func (c *compiler) compileAssignTarget(target ast.Expr) {
 }
 
 func (c *compiler) compileUnpack(elts []ast.Expr) {
-	c.emit(bytecode.UNPACK_SEQUENCE, uint32(len(elts)))
+	star := -1
+	for i, elt := range elts {
+		if _, ok := elt.(*ast.Starred); ok {
+			if star >= 0 {
+				c.fail(elt.Pos().Line, "multiple starred expressions in assignment")
+				return
+			}
+			star = i
+		}
+	}
+
+	if star < 0 {
+		c.emit(bytecode.UNPACK_SEQUENCE, uint32(len(elts)))
+		for _, elt := range elts {
+			c.compileAssignTarget(elt)
+		}
+		return
+	}
+
+	before, after := star, len(elts)-star-1
+	if before > bytecode.UnpackBeforeMask || after > bytecode.UnpackBeforeMask {
+		c.fail(elts[star].Pos().Line, "too many expressions in star-unpacking assignment")
+		return
+	}
+	c.noteDepth(len(elts) + 2)
+	c.emit(bytecode.UNPACK_EX, uint32(before)|uint32(after)<<bytecode.UnpackAfterShift)
 	for _, elt := range elts {
-		c.compileAssignTarget(elt)
+		if s, ok := elt.(*ast.Starred); ok {
+			c.compileAssignTarget(s.Value)
+		} else {
+			c.compileAssignTarget(elt)
+		}
 	}
 }
 
@@ -586,11 +618,14 @@ func (c *compiler) trackLine(line int) {
 	if line == 0 || line == c.lastLine {
 		return
 	}
+	if c.firstLine == 0 {
+		// The first tracked line is the code object's base line, so the first
+		// table entry carries a zero line delta.
+		c.firstLine = line
+		c.lastLine = line
+	}
 	off := len(c.instrs)
 	c.lineTable = append(c.lineTable, off-c.lastOff, line-c.lastLine)
 	c.lastOff = off
 	c.lastLine = line
-	if c.firstLine == 0 {
-		c.firstLine = line
-	}
 }

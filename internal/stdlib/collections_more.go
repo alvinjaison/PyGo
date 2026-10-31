@@ -184,8 +184,11 @@ func (dq *DequeObject) Type() *object.TypeObject { return object.ListType }
 func (dq *DequeObject) String() string {
 	return "deque(" + object.NewList(dq.items).Repr() + ")"
 }
-func (dq *DequeObject) Repr() string          { return dq.String() }
-func (dq *DequeObject) Len() int              { return len(dq.items) }
+func (dq *DequeObject) Repr() string { return dq.String() }
+func (dq *DequeObject) Len() int     { return len(dq.items) }
+
+// IsMatchSequence lets sequence patterns match a deque, as they do in CPython.
+func (dq *DequeObject) IsMatchSequence()      {}
 func (dq *DequeObject) IsTrue() (bool, error) { return len(dq.items) > 0, nil }
 
 func (dq *DequeObject) Iter() (object.Iterator, error) {

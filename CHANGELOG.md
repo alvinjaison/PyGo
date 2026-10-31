@@ -22,6 +22,14 @@ a tagged release; everything below is on the `main` branch (`Unreleased`).
   (arithmetic, comparison, container, iteration, `__call__`, `__bool__`,
   `__hash__`, `__str__`/`__repr__`), `@property`/`@classmethod`/`@staticmethod`,
   and `super()` (zero-arg and explicit).
+- Structural pattern matching: the `match` statement with literal, capture,
+  wildcard, value (`Color.RED`), `|`, `as`, sequence (`[a, *rest]`), mapping
+  (`{"k": v, **rest}`) and class (`Point(x, y=0)`) patterns, guards, and
+  `__match_args__`. Built-in types (`int()`, `str() as s`, `dict()`) and
+  `collections.namedtuple` classes work as class patterns. `match` and `case`
+  stay ordinary identifiers everywhere else.
+- Star-unpacking assignment: `first, *rest = items`, `*init, last = items`.
+- `dict(...)` and `set(...)` constructors.
 - Exceptions: `try`/`except`/`finally`, `raise`, custom exception classes,
   built-in exception hierarchy, and exception-safe `with` statements.
 
@@ -64,6 +72,20 @@ a tagged release; everything below is on the `main` branch (`Unreleased`).
 - `break` out of a `for` loop no longer leaks the loop iterator on the value
   stack. Enough of them used to overflow it and crash the VM.
 - `lambda` can now close over variables of an enclosing function.
+- Tracebacks report the line that raised. They used to show only the first
+  statement's line of each function, because the line table was never attached
+  to the compiled code.
+- Syntax errors report the correct physical line. The lexer counted every
+  newline twice, so a failure on line 4 was reported as line 7. A statement's
+  final `NEWLINE` token is also attributed to its own line, not the next one.
+- `nonlocal x` now works when the nested function only assigns `x` (the classic
+  counter closure). The enclosing function did not keep `x` in a cell, so the
+  call failed with "free variable referenced before assignment".
+- `int`, `str`, `float`, `bool`, `list`, `tuple` and `bytes` are now usable as
+  types: `isinstance(1, int)` and `type(x) == int` work. Previously
+  `isinstance` rejected them with a `TypeError`.
+- Unary `-` works on `float` and `bool`, unary `+` rejects non-numbers, and
+  bad operands raise a Python `TypeError` instead of a bare Go error.
 - `any()` and `all()` short-circuit, so they work on infinite generators.
 - Errors are classified accurately at the public API: a script that fails to
   parse is a `SyntaxError`, a recovered interpreter panic is an `InternalError`,
@@ -72,5 +94,5 @@ a tagged release; everything below is on the `main` branch (`Unreleased`).
 
 ### Not yet implemented
 
-`async`/`await`, the `match` statement, `bytearray`, custom descriptors,
+`async`/`await`, `bytearray`, custom descriptors,
 metaclasses, and most of the remaining standard library.

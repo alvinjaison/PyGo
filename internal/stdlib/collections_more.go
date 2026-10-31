@@ -23,9 +23,9 @@ type DefaultDictObject struct {
 
 func (d *DefaultDictObject) Type() *object.TypeObject { return object.DictType }
 func (d *DefaultDictObject) String() string           { return "defaultdict(" + d.data.Repr() + ")" }
-func (d *DefaultDictObject) Repr() string              { return d.String() }
-func (d *DefaultDictObject) Len() int                  { return d.data.Len() }
-func (d *DefaultDictObject) IsTrue() (bool, error)     { return d.data.Len() > 0, nil }
+func (d *DefaultDictObject) Repr() string             { return d.String() }
+func (d *DefaultDictObject) Len() int                 { return d.data.Len() }
+func (d *DefaultDictObject) IsTrue() (bool, error)    { return d.data.Len() > 0, nil }
 
 // GetItem returns the value for key, creating it from the factory if absent.
 func (d *DefaultDictObject) GetItem(key object.Object) (object.Object, error) {
@@ -103,9 +103,9 @@ type OrderedDictObject struct {
 
 func (d *OrderedDictObject) Type() *object.TypeObject { return object.DictType }
 func (d *OrderedDictObject) String() string           { return "OrderedDict(" + d.data.Repr() + ")" }
-func (d *OrderedDictObject) Repr() string              { return d.String() }
-func (d *OrderedDictObject) Len() int                  { return d.data.Len() }
-func (d *OrderedDictObject) IsTrue() (bool, error)     { return d.data.Len() > 0, nil }
+func (d *OrderedDictObject) Repr() string             { return d.String() }
+func (d *OrderedDictObject) Len() int                 { return d.data.Len() }
+func (d *OrderedDictObject) IsTrue() (bool, error)    { return d.data.Len() > 0, nil }
 
 func (d *OrderedDictObject) GetItem(key object.Object) (object.Object, error) {
 	return d.data.GetItem(key)

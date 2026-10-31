@@ -20,7 +20,7 @@ func NewProperty(getter, setter Object) *PropertyObject {
 
 func (p *PropertyObject) Type() *TypeObject { return propertyType }
 func (p *PropertyObject) String() string    { return "<property object>" }
-func (p *PropertyObject) Repr() string       { return p.String() }
+func (p *PropertyObject) Repr() string      { return p.String() }
 
 // get invokes the property getter with the instance.
 func (p *PropertyObject) get(instance Object) (Object, error) {
@@ -49,7 +49,7 @@ func NewClassMethod(fn Object) *ClassMethodObject { return &ClassMethodObject{Fu
 
 func (c *ClassMethodObject) Type() *TypeObject { return classmethodType }
 func (c *ClassMethodObject) String() string    { return "<classmethod object>" }
-func (c *ClassMethodObject) Repr() string       { return c.String() }
+func (c *ClassMethodObject) Repr() string      { return c.String() }
 
 // StaticMethodObject implements `staticmethod`: the wrapped function receives
 // no implicit first argument.
@@ -61,7 +61,7 @@ func NewStaticMethod(fn Object) *StaticMethodObject { return &StaticMethodObject
 
 func (s *StaticMethodObject) Type() *TypeObject { return staticmethodType }
 func (s *StaticMethodObject) String() string    { return "<staticmethod object>" }
-func (s *StaticMethodObject) Repr() string       { return s.String() }
+func (s *StaticMethodObject) Repr() string      { return s.String() }
 
 // Descriptor type singletons.
 var (

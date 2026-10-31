@@ -40,11 +40,11 @@ import "fmt"
 
 // Position holds source location information attached to every AST node.
 type Position struct {
-	Filename  string
-	Line      int // 1-indexed
-	Col       int // 1-indexed
-	EndLine   int
-	EndCol    int
+	Filename string
+	Line     int // 1-indexed
+	Col      int // 1-indexed
+	EndLine  int
+	EndCol   int
 }
 
 func (p Position) String() string {
@@ -72,8 +72,8 @@ type Expr interface {
 // baseNode provides source position for all nodes.
 type baseNode struct{ pos Position }
 
-func (b baseNode) Pos() Position   { return b.pos }
-func (b baseNode) nodeMarker()     {}
+func (b baseNode) Pos() Position { return b.pos }
+func (b baseNode) nodeMarker()   {}
 
 // baseStmt embeds baseNode and marks a node as a statement.
 type baseStmt struct{ baseNode }
@@ -385,9 +385,9 @@ type GeneratorExp struct {
 
 // Comprehension is a single for/if clause in a comprehension.
 type Comprehension struct {
-	Target Expr
-	Iter   Expr
-	Ifs    []Expr
+	Target  Expr
+	Iter    Expr
+	Ifs     []Expr
 	IsAsync bool
 }
 
@@ -496,13 +496,13 @@ type Slice struct {
 
 // Arguments holds the full argument specification for a function definition.
 type Arguments struct {
-	PosonlyArgs []*Arg   // positional-only args (before /)
-	Args        []*Arg   // regular positional args
-	Vararg      *Arg     // *args, or nil
-	KwonlyArgs  []*Arg   // keyword-only args (after *)
-	KwDefaults  []Expr   // defaults for kw-only args (parallel; nil = no default)
-	Kwarg       *Arg     // **kwargs, or nil
-	Defaults    []Expr   // defaults for positional args (right-aligned)
+	PosonlyArgs []*Arg // positional-only args (before /)
+	Args        []*Arg // regular positional args
+	Vararg      *Arg   // *args, or nil
+	KwonlyArgs  []*Arg // keyword-only args (after *)
+	KwDefaults  []Expr // defaults for kw-only args (parallel; nil = no default)
+	Kwarg       *Arg   // **kwargs, or nil
+	Defaults    []Expr // defaults for positional args (right-aligned)
 }
 
 // Arg is a single function parameter.
@@ -619,4 +619,3 @@ func SetPos[T Node](node T, p Position) T {
 func NewArg(name string, annotation Expr, p Position) *Arg {
 	return &Arg{Arg: name, Annotation: annotation, pos: p}
 }
-

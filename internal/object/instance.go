@@ -223,7 +223,7 @@ type dunderIterator struct{ obj Object }
 
 func (it *dunderIterator) Type() *TypeObject { return it.obj.Type() }
 func (it *dunderIterator) String() string    { return "<iterator>" }
-func (it *dunderIterator) Repr() string       { return it.String() }
+func (it *dunderIterator) Repr() string      { return it.String() }
 func (it *dunderIterator) Next() (Object, error) {
 	m := lookupInMRO(it.obj.Type(), "__next__")
 	if m == nil {
@@ -310,8 +310,6 @@ func LookupInMRO(t *TypeObject, name string) (Object, bool) {
 	return v, v != nil
 }
 
-
-
 // identityHash returns a stable per-object hash. Instances carry a unique id
 // assigned at creation, used as the default __hash__ when no user-defined one
 // exists. This mirrors CPython's default identity-based object hashing without
@@ -336,7 +334,7 @@ func newSeqIterator(obj Object) *seqIterator {
 
 func (it *seqIterator) Type() *TypeObject { return it.obj.Type() }
 func (it *seqIterator) String() string    { return "<sequence iterator>" }
-func (it *seqIterator) Repr() string       { return it.String() }
+func (it *seqIterator) Repr() string      { return it.String() }
 func (it *seqIterator) Next() (Object, error) {
 	m := lookupDunder(it.obj, "__getitem__")
 	if m == nil {

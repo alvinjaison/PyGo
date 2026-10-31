@@ -6,19 +6,19 @@ import "github.com/alvinjaison/PyGo/internal/ast"
 type symbolKind int
 
 const (
-	symFree    symbolKind = iota // referenced, bound in an enclosing function scope
-	symLocal                     // assigned in this scope
-	symGlobal                    // explicitly global, or module-level
-	symCell                      // local here and captured by a nested function
+	symFree   symbolKind = iota // referenced, bound in an enclosing function scope
+	symLocal                    // assigned in this scope
+	symGlobal                   // explicitly global, or module-level
+	symCell                     // local here and captured by a nested function
 )
 
 // symtable holds name classification for a single scope.
 type symtable struct {
-	kinds       map[string]symbolKind
-	assigned    map[string]bool // names assigned in this scope
-	declGlobal  map[string]bool
+	kinds        map[string]symbolKind
+	assigned     map[string]bool // names assigned in this scope
+	declGlobal   map[string]bool
 	declNonlocal map[string]bool
-	referenced  map[string]bool
+	referenced   map[string]bool
 	// names captured by nested functions (become cells here)
 	capturedByChild map[string]bool
 }

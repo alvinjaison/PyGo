@@ -13,15 +13,15 @@ import (
 
 // FunctionObject represents a Python function defined with `def`.
 type FunctionObject struct {
-	Code       *bytecode.Code
-	Globals    *DictObject
-	Defaults   []Object            // default positional argument values
-	KwDefaults map[string]Object   // keyword-only argument defaults
-	Closure    []*CellObject       // free variable cells
-	Name       string
-	QualName   string
-	Doc        string
-	Annotations map[string]Object  // parameter and return annotations
+	Code        *bytecode.Code
+	Globals     *DictObject
+	Defaults    []Object          // default positional argument values
+	KwDefaults  map[string]Object // keyword-only argument defaults
+	Closure     []*CellObject     // free variable cells
+	Name        string
+	QualName    string
+	Doc         string
+	Annotations map[string]Object // parameter and return annotations
 }
 
 func (f *FunctionObject) Type() *TypeObject { return FunctionType }
@@ -216,27 +216,27 @@ func (t *TracebackObject) Format() string {
 // ============================================================
 
 var (
-	TypeStopIteration    *TypeObject
-	TypeValueError       *TypeObject
-	TypeTypeError        *TypeObject
-	TypeNameError        *TypeObject
-	TypeAttributeError   *TypeObject
-	TypeIndexError       *TypeObject
-	TypeKeyError         *TypeObject
-	TypeZeroDivisionError *TypeObject
-	TypeRuntimeError     *TypeObject
-	TypeRecursionError   *TypeObject
+	TypeStopIteration       *TypeObject
+	TypeValueError          *TypeObject
+	TypeTypeError           *TypeObject
+	TypeNameError           *TypeObject
+	TypeAttributeError      *TypeObject
+	TypeIndexError          *TypeObject
+	TypeKeyError            *TypeObject
+	TypeZeroDivisionError   *TypeObject
+	TypeRuntimeError        *TypeObject
+	TypeRecursionError      *TypeObject
 	TypeNotImplementedError *TypeObject
-	TypeOverflowError    *TypeObject
-	TypeSyntaxError      *TypeObject
-	TypeImportError      *TypeObject
+	TypeOverflowError       *TypeObject
+	TypeSyntaxError         *TypeObject
+	TypeImportError         *TypeObject
 	TypeModuleNotFoundError *TypeObject
-	TypeOSError          *TypeObject
-	TypeSystemExit       *TypeObject
-	TypeKeyboardInterrupt *TypeObject
-	TypeGeneratorExit    *TypeObject
-	TypeAssertionError   *TypeObject
-	TypeUnboundLocalError *TypeObject
+	TypeOSError             *TypeObject
+	TypeSystemExit          *TypeObject
+	TypeKeyboardInterrupt   *TypeObject
+	TypeGeneratorExit       *TypeObject
+	TypeAssertionError      *TypeObject
+	TypeUnboundLocalError   *TypeObject
 )
 
 // installExceptionTypes constructs the built-in exception type hierarchy.

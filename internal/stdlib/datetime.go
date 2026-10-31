@@ -113,7 +113,7 @@ type timedeltaFactory struct{}
 
 func (f *timedeltaFactory) Type() *object.TypeObject { return object.TypeType }
 func (f *timedeltaFactory) String() string           { return "<class 'datetime.timedelta'>" }
-func (f *timedeltaFactory) Repr() string              { return f.String() }
+func (f *timedeltaFactory) Repr() string             { return f.String() }
 
 // Call builds a timedelta from keyword-style components. Positional order
 // matches Python: days, seconds, microseconds (then hours/minutes/weeks via kw).

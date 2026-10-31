@@ -703,8 +703,8 @@ func isStringStart(src []rune, pos int) bool {
 	return false
 }
 
-func isDigit(r rune) bool        { return r >= '0' && r <= '9' }
-func isIdentStart(r rune) bool   { return r == '_' || unicode.IsLetter(r) }
+func isDigit(r rune) bool         { return r >= '0' && r <= '9' }
+func isIdentStart(r rune) bool    { return r == '_' || unicode.IsLetter(r) }
 func isIdentContinue(r rune) bool { return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r) }
 
 // All returns all tokens from the source as a slice.

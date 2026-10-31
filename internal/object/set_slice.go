@@ -34,8 +34,8 @@ func NewSetFrom(items []Object) (*SetObject, error) {
 	return s, nil
 }
 
-func (s *SetObject) Type() *TypeObject { return SetType }
-func (s *SetObject) Len() int          { return s.count }
+func (s *SetObject) Type() *TypeObject     { return SetType }
+func (s *SetObject) Len() int              { return s.count }
 func (s *SetObject) IsTrue() (bool, error) { return s.count > 0, nil }
 
 func (s *SetObject) String() string { return s.Repr() }

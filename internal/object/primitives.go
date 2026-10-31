@@ -14,10 +14,10 @@ import (
 // NoneObject is the type of Python's None singleton.
 type NoneObject struct{}
 
-func (n *NoneObject) Type() *TypeObject { return NoneType }
-func (n *NoneObject) String() string    { return "None" }
-func (n *NoneObject) Repr() string      { return "None" }
-func (n *NoneObject) Hash() (int64, error) { return 0, nil }
+func (n *NoneObject) Type() *TypeObject     { return NoneType }
+func (n *NoneObject) String() string        { return "None" }
+func (n *NoneObject) Repr() string          { return "None" }
+func (n *NoneObject) Hash() (int64, error)  { return 0, nil }
 func (n *NoneObject) IsTrue() (bool, error) { return false, nil }
 
 // ============================================================
@@ -252,4 +252,4 @@ func (s *StrObject) Hash() (int64, error) {
 	return result, nil
 }
 func (s *StrObject) IsTrue() (bool, error) { return len(s.Value) > 0, nil }
-func (s *StrObject) Len() int               { return len([]rune(s.Value)) } // Unicode codepoint length
+func (s *StrObject) Len() int              { return len([]rune(s.Value)) } // Unicode codepoint length

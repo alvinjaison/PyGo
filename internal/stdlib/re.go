@@ -115,7 +115,7 @@ func compilePattern(pat string) (*rePattern, error) {
 
 func (p *rePattern) Type() *object.TypeObject { return object.ObjectType }
 func (p *rePattern) String() string           { return "re.compile('" + p.src + "')" }
-func (p *rePattern) Repr() string              { return p.String() }
+func (p *rePattern) Repr() string             { return p.String() }
 
 // GetAttr exposes pattern methods: match, search, findall, sub, split, pattern.
 func (p *rePattern) GetAttr(name string) (object.Object, error) {

@@ -49,7 +49,7 @@ type NamedTupleFactory struct {
 
 func (f *NamedTupleFactory) Type() *object.TypeObject { return object.TypeType }
 func (f *NamedTupleFactory) String() string           { return "<class '" + f.typeName + "'>" }
-func (f *NamedTupleFactory) Repr() string              { return f.String() }
+func (f *NamedTupleFactory) Repr() string             { return f.String() }
 
 // Call constructs an instance from positional (or keyword) field values.
 func (f *NamedTupleFactory) Call(args []object.Object, kwargs map[string]object.Object) (object.Object, error) {

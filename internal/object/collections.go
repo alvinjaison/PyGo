@@ -19,10 +19,10 @@ func NewList(items []Object) *ListObject {
 	return &ListObject{Items: append([]Object{}, items...)}
 }
 
-func (l *ListObject) Type() *TypeObject { return ListType }
-func (l *ListObject) String() string    { return reprCollection("[", "]", l.Items) }
-func (l *ListObject) Repr() string      { return l.String() }
-func (l *ListObject) Len() int          { return len(l.Items) }
+func (l *ListObject) Type() *TypeObject     { return ListType }
+func (l *ListObject) String() string        { return reprCollection("[", "]", l.Items) }
+func (l *ListObject) Repr() string          { return l.String() }
+func (l *ListObject) Len() int              { return len(l.Items) }
 func (l *ListObject) IsTrue() (bool, error) { return len(l.Items) > 0, nil }
 
 func (l *ListObject) GetItem(key Object) (Object, error) {
@@ -134,8 +134,8 @@ func (t *TupleObject) String() string {
 	}
 	return reprCollection("(", ")", t.Items)
 }
-func (t *TupleObject) Repr() string { return t.String() }
-func (t *TupleObject) Len() int     { return len(t.Items) }
+func (t *TupleObject) Repr() string          { return t.String() }
+func (t *TupleObject) Len() int              { return len(t.Items) }
 func (t *TupleObject) IsTrue() (bool, error) { return len(t.Items) > 0, nil }
 
 func (t *TupleObject) GetItem(key Object) (Object, error) {
@@ -239,8 +239,8 @@ func (d *DictObject) String() string {
 	sb = append(sb, '}')
 	return string(sb)
 }
-func (d *DictObject) Repr() string { return d.String() }
-func (d *DictObject) Len() int     { return len(d.entries) }
+func (d *DictObject) Repr() string          { return d.String() }
+func (d *DictObject) Len() int              { return len(d.entries) }
 func (d *DictObject) IsTrue() (bool, error) { return len(d.entries) > 0, nil }
 
 // GetItem retrieves the value for a key, or returns a KeyError.

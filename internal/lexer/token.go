@@ -55,7 +55,7 @@ const (
 	IN
 	IS
 	LAMBDA
-	MATCH  // Python 3.10+ soft keyword
+	MATCH // Python 3.10+ soft keyword
 	NONE
 	NONLOCAL
 	NOT
@@ -65,7 +65,7 @@ const (
 	RETURN
 	TRUE
 	TRY
-	TYPE   // Python 3.12+ soft keyword
+	TYPE // Python 3.12+ soft keyword
 	WHILE
 	WITH
 	YIELD
@@ -102,17 +102,17 @@ const (
 	RSHIFTEQUAL      // >>=
 
 	// Comparison operators
-	EQEQUAL    // ==
-	NOTEQUAL   // !=
-	LESS       // <
-	GREATER    // >
-	LESSEQUAL  // <=
+	EQEQUAL      // ==
+	NOTEQUAL     // !=
+	LESS         // <
+	GREATER      // >
+	LESSEQUAL    // <=
 	GREATEREQUAL // >=
 
 	// Assignment
-	EQUAL    // =
-	WALRUS   // :=  (Python 3.8+)
-	RARROW   // ->  (return type annotation)
+	EQUAL  // =
+	WALRUS // :=  (Python 3.8+)
+	RARROW // ->  (return type annotation)
 
 	// Delimiters
 	LPAREN    // (

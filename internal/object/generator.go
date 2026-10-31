@@ -24,7 +24,7 @@ func NewGenerator(name string, resume func() (Object, bool, error)) *GeneratorOb
 
 func (g *GeneratorObject) Type() *TypeObject { return GeneratorType }
 func (g *GeneratorObject) String() string    { return "<generator object " + g.Name + ">" }
-func (g *GeneratorObject) Repr() string       { return g.String() }
+func (g *GeneratorObject) Repr() string      { return g.String() }
 
 // Iter returns the generator itself (generators are their own iterator).
 func (g *GeneratorObject) Iter() (Iterator, error) { return g, nil }

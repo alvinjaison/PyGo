@@ -74,7 +74,7 @@ type dateFactory struct{}
 
 func (f *dateFactory) Type() *object.TypeObject { return object.TypeType }
 func (f *dateFactory) String() string           { return "<class 'datetime.date'>" }
-func (f *dateFactory) Repr() string              { return f.String() }
+func (f *dateFactory) Repr() string             { return f.String() }
 
 func (f *dateFactory) Call(args []object.Object, _ map[string]object.Object) (object.Object, error) {
 	if len(args) != 3 {
@@ -193,7 +193,7 @@ type datetimeFactory struct{}
 
 func (f *datetimeFactory) Type() *object.TypeObject { return object.TypeType }
 func (f *datetimeFactory) String() string           { return "<class 'datetime.datetime'>" }
-func (f *datetimeFactory) Repr() string              { return f.String() }
+func (f *datetimeFactory) Repr() string             { return f.String() }
 
 func (f *datetimeFactory) Call(args []object.Object, _ map[string]object.Object) (object.Object, error) {
 	if len(args) < 3 {

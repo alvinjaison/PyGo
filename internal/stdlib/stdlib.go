@@ -14,12 +14,12 @@ type Builder func(name string) *object.ModuleObject
 
 // registry maps module names to their Go builders.
 var registry = map[string]Builder{
-	"math":      buildMath,
-	"json":      buildJSON,
-	"re":        buildRe,
-	"random":    buildRandom,
-	"sys":       buildSys,
-	"string":    buildString,
+	"math":        buildMath,
+	"json":        buildJSON,
+	"re":          buildRe,
+	"random":      buildRandom,
+	"sys":         buildSys,
+	"string":      buildString,
 	"functools":   buildFunctools,
 	"itertools":   buildItertools,
 	"os":          buildOS,

@@ -8,8 +8,8 @@ package object
 type TypeObject struct {
 	name  string
 	bases []*TypeObject
-	mro   []*TypeObject  // computed C3 linearization; nil until computed
-	dict  *DictObject    // type's attribute namespace
+	mro   []*TypeObject // computed C3 linearization; nil until computed
+	dict  *DictObject   // type's attribute namespace
 
 	// Slots hold Go-level implementations of Python protocols.
 	// When a slot is nil, the default behavior (or AttributeError) applies.
@@ -327,7 +327,7 @@ func init() {
 	// for *TypeObject values.
 
 	NoneType = newTypeObject("NoneType", []*TypeObject{ObjectType}, TypeSlots{})
-	BoolType = newTypeObject("bool", []*TypeObject{/* IntType — set after IntType init */}, TypeSlots{})
+	BoolType = newTypeObject("bool", []*TypeObject{ /* IntType — set after IntType init */ }, TypeSlots{})
 	IntType = newTypeObject("int", []*TypeObject{ObjectType}, TypeSlots{})
 	FloatType = newTypeObject("float", []*TypeObject{ObjectType}, TypeSlots{})
 	StrType = newTypeObject("str", []*TypeObject{ObjectType}, TypeSlots{})

@@ -55,9 +55,9 @@ type CounterObject struct {
 
 func (c *CounterObject) Type() *object.TypeObject { return object.DictType }
 func (c *CounterObject) String() string           { return "Counter(" + c.counts.Repr() + ")" }
-func (c *CounterObject) Repr() string              { return c.String() }
-func (c *CounterObject) Len() int                  { return c.counts.Len() }
-func (c *CounterObject) IsTrue() (bool, error)     { return c.counts.Len() > 0, nil }
+func (c *CounterObject) Repr() string             { return c.String() }
+func (c *CounterObject) Len() int                 { return c.counts.Len() }
+func (c *CounterObject) IsTrue() (bool, error)    { return c.counts.Len() > 0, nil }
 
 func (c *CounterObject) increment(key object.Object, by int64) {
 	cur := int64(0)

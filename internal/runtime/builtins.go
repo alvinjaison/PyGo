@@ -723,11 +723,12 @@ func biSuper(args []object.Object, _ map[string]object.Object) (object.Object, e
 }
 
 // bytes(...) constructs a bytes object:
-//   bytes()                     -> empty
-//   bytes(int)                  -> that many zero bytes
-//   bytes(str, encoding)        -> encoded (UTF-8 only)
-//   bytes(iterable_of_ints)     -> those byte values
-//   bytes(bytes)                -> a copy
+//
+//	bytes()                     -> empty
+//	bytes(int)                  -> that many zero bytes
+//	bytes(str, encoding)        -> encoded (UTF-8 only)
+//	bytes(iterable_of_ints)     -> those byte values
+//	bytes(bytes)                -> a copy
 func biBytes(args []object.Object, _ map[string]object.Object) (object.Object, error) {
 	if len(args) == 0 {
 		return object.NewBytes(nil), nil

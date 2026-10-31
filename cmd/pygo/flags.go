@@ -37,13 +37,13 @@ func parseFlags(args []string) (*config, error) {
 	fs.SetOutput(os.Stderr)
 
 	var (
-		cmdFlag      = fs.String("c", "", "Execute `source` string and exit")
-		maxDepth     = fs.Int("max-depth", 500, "Maximum call stack `depth`")
-		timeoutStr   = fs.String("timeout", "", "Execution `timeout` (e.g. 30s, 5m)")
-		noStdlib     = fs.Bool("no-stdlib", false, "Disable standard library modules")
-		verbose      = fs.Bool("verbose", false, "Enable verbose/diagnostic output")
-		versionFlag  = fs.Bool("version", false, "Print version and exit")
-		vFlag        = fs.Bool("v", false, "Print version and exit")
+		cmdFlag     = fs.String("c", "", "Execute `source` string and exit")
+		maxDepth    = fs.Int("max-depth", 500, "Maximum call stack `depth`")
+		timeoutStr  = fs.String("timeout", "", "Execution `timeout` (e.g. 30s, 5m)")
+		noStdlib    = fs.Bool("no-stdlib", false, "Disable standard library modules")
+		verbose     = fs.Bool("verbose", false, "Enable verbose/diagnostic output")
+		versionFlag = fs.Bool("version", false, "Print version and exit")
+		vFlag       = fs.Bool("v", false, "Print version and exit")
 	)
 
 	// Custom usage message.

@@ -12,7 +12,7 @@ import (
 
 // Precedence levels, lowest to highest.
 const (
-	precNone = iota
+	precNone    = iota
 	precTernary // x if c else y
 	precOr      // or
 	precAnd     // and

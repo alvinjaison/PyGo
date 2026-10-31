@@ -62,30 +62,36 @@ func (c *compiler) compileExpr(e ast.Expr) {
 		c.emit(bytecode.BINARY_SUBSCR, 0)
 
 	case *ast.List:
+		if hasStarred(n.Elts) {
+			c.compileUnpackedList(n.Elts)
+			break
+		}
 		for _, elt := range n.Elts {
 			c.compileExpr(elt)
 		}
 		c.emit(bytecode.BUILD_LIST, uint32(len(n.Elts)))
-
 	case *ast.Tuple:
+		if hasStarred(n.Elts) {
+			c.compileUnpackedList(n.Elts)
+			c.emit(bytecode.LIST_TO_TUPLE, 0)
+			break
+		}
 		for _, elt := range n.Elts {
 			c.compileExpr(elt)
 		}
 		c.emit(bytecode.BUILD_TUPLE, uint32(len(n.Elts)))
-
 	case *ast.Set:
+		if hasStarred(n.Elts) {
+			c.compileUnpackedList(n.Elts)
+			c.emit(bytecode.LIST_TO_SET, 0)
+			break
+		}
 		for _, elt := range n.Elts {
 			c.compileExpr(elt)
 		}
 		c.emit(bytecode.BUILD_SET, uint32(len(n.Elts)))
-
 	case *ast.Dict:
-		for i := range n.Keys {
-			c.compileExpr(n.Keys[i])
-			c.compileExpr(n.Values[i])
-		}
-		c.emit(bytecode.BUILD_MAP, uint32(len(n.Keys)))
-
+		c.compileDict(n)
 	case *ast.Lambda:
 		c.compileLambda(n)
 
@@ -184,7 +190,74 @@ func (c *compiler) compileCompare(n *ast.Compare) {
 	}
 }
 
+// hasStarred reports whether any element is a *expr.
+func hasStarred(elts []ast.Expr) bool {
+	for _, e := range elts {
+		if _, ok := e.(*ast.Starred); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// compileUnpackedList leaves a new list holding elts on the stack, expanding
+// each *iterable element.
+func (c *compiler) compileUnpackedList(elts []ast.Expr) {
+	c.emit(bytecode.BUILD_LIST, 0)
+	run := 0
+	flush := func() {
+		if run > 0 {
+			c.emit(bytecode.BUILD_LIST, uint32(run))
+			c.emit(bytecode.LIST_EXTEND, 0)
+			run = 0
+		}
+	}
+	for _, e := range elts {
+		if s, ok := e.(*ast.Starred); ok {
+			flush()
+			c.compileExpr(s.Value)
+			c.emit(bytecode.LIST_EXTEND, 0)
+			continue
+		}
+		c.compileExpr(e)
+		run++
+	}
+	flush()
+}
+
+// compileCallEx compiles a call that uses *args or **kwargs unpacking.
+func (c *compiler) compileCallEx(n *ast.Call) {
+	c.compileExpr(n.Func)
+	c.compileUnpackedList(n.Args)
+	flags := uint32(0)
+	if len(n.Keywords) > 0 {
+		flags = 1
+		c.emit(bytecode.BUILD_MAP, 0)
+		for _, kw := range n.Keywords {
+			if kw.Arg == "" {
+				c.compileExpr(kw.Value)
+			} else {
+				c.emit(bytecode.LOAD_CONST, c.constIndex(kw.Arg))
+				c.compileExpr(kw.Value)
+				c.emit(bytecode.BUILD_MAP, 1)
+			}
+			c.emit(bytecode.DICT_MERGE, 1)
+		}
+	}
+	c.emit(bytecode.CALL_FUNCTION_EX, flags)
+}
+
 func (c *compiler) compileCall(n *ast.Call) {
+	unpacking := hasStarred(n.Args)
+	for _, kw := range n.Keywords {
+		if kw.Arg == "" {
+			unpacking = true
+		}
+	}
+	if unpacking {
+		c.compileCallEx(n)
+		return
+	}
 	c.compileExpr(n.Func)
 	for _, a := range n.Args {
 		c.compileExpr(a)
@@ -351,4 +424,34 @@ func compareOpCode(op ast.CmpOp) bytecode.CompareOp {
 		return bytecode.CmpIsNot
 	}
 	return bytecode.CmpEq
+}
+
+// compileDict compiles a dict display, expanding **mapping entries (which the
+// parser represents as a nil key).
+func (c *compiler) compileDict(n *ast.Dict) {
+	unpacking := false
+	for _, k := range n.Keys {
+		if k == nil {
+			unpacking = true
+		}
+	}
+	if !unpacking {
+		for i := range n.Keys {
+			c.compileExpr(n.Keys[i])
+			c.compileExpr(n.Values[i])
+		}
+		c.emit(bytecode.BUILD_MAP, uint32(len(n.Keys)))
+		return
+	}
+	c.emit(bytecode.BUILD_MAP, 0)
+	for i, k := range n.Keys {
+		if k == nil {
+			c.compileExpr(n.Values[i])
+		} else {
+			c.compileExpr(k)
+			c.compileExpr(n.Values[i])
+			c.emit(bytecode.BUILD_MAP, 1)
+		}
+		c.emit(bytecode.DICT_MERGE, 0)
+	}
 }

@@ -209,18 +209,19 @@ func (it *tupleIterator) Next() (Object, error) {
 // (for O(1) lookup). This is a simplified version of CPython's compact dict.
 type DictObject struct {
 	entries []dictEntry
-	index   map[int64][]int // hash → list of entry indices
+	index   map[int64]int // hash -> index of the first entry with that hash
 }
 
 type dictEntry struct {
 	key   Object
 	value Object
 	hash  int64
+	next  int // index of the next entry with the same hash, or -1
 }
 
 func NewDict() *DictObject {
 	return &DictObject{
-		index: make(map[int64][]int),
+		index: make(map[int64]int),
 	}
 }
 
@@ -243,22 +244,67 @@ func (d *DictObject) Repr() string          { return d.String() }
 func (d *DictObject) Len() int              { return len(d.entries) }
 func (d *DictObject) IsTrue() (bool, error) { return len(d.entries) > 0, nil }
 
+// find returns the entry index for key, or -1.
+func (d *DictObject) find(key Object, h int64) (int, error) {
+	idx, ok := d.index[h]
+	if !ok {
+		return -1, nil
+	}
+	for idx >= 0 {
+		e := &d.entries[idx]
+		eq, err := keysEqual(e.key, key)
+		if err != nil {
+			return -1, err
+		}
+		if eq {
+			return idx, nil
+		}
+		idx = e.next
+	}
+	return -1, nil
+}
+
+// Lookup returns the value for key and whether it is present. Unlike GetItem
+// it does not allocate an error for a missing key, which makes it the right
+// choice for hot paths such as global and attribute resolution.
+func (d *DictObject) Lookup(key Object) (Object, bool, error) {
+	h, err := hashObject(key)
+	if err != nil {
+		return nil, false, err
+	}
+	idx, err := d.find(key, h)
+	if err != nil || idx < 0 {
+		return nil, false, err
+	}
+	return d.entries[idx].value, true, nil
+}
+
+// LookupStr looks up a string key without constructing a StrObject.
+func (d *DictObject) LookupStr(key string) (Object, bool) {
+	idx, ok := d.index[hashString(key)]
+	if !ok {
+		return nil, false
+	}
+	for idx >= 0 {
+		e := &d.entries[idx]
+		if s, isStr := e.key.(*StrObject); isStr && s.Value == key {
+			return e.value, true
+		}
+		idx = e.next
+	}
+	return nil, false
+}
+
 // GetItem retrieves the value for a key, or returns a KeyError.
 func (d *DictObject) GetItem(key Object) (Object, error) {
-	h, err := hashObject(key)
+	v, ok, err := d.Lookup(key)
 	if err != nil {
 		return nil, err
 	}
-	for _, idx := range d.index[h] {
-		eq, err := objectsEqual(d.entries[idx].key, key)
-		if err != nil {
-			return nil, err
-		}
-		if eq {
-			return d.entries[idx].value, nil
-		}
+	if !ok {
+		return nil, fmt.Errorf("KeyError: %s", key.Repr())
 	}
-	return nil, fmt.Errorf("KeyError: %s", key.Repr())
+	return v, nil
 }
 
 // SetItem sets or updates a key-value pair.
@@ -267,21 +313,22 @@ func (d *DictObject) SetItem(key Object, value Object) error {
 	if err != nil {
 		return err
 	}
-	// Check if key already exists.
-	for _, idx := range d.index[h] {
-		eq, err := objectsEqual(d.entries[idx].key, key)
-		if err != nil {
-			return err
-		}
-		if eq {
-			d.entries[idx].value = value
-			return nil
-		}
+	idx, err := d.find(key, h)
+	if err != nil {
+		return err
 	}
-	// New key: append to entries and add to index.
+	if idx >= 0 {
+		d.entries[idx].value = value
+		return nil
+	}
+	// New key: append to the entries and chain it into the hash index.
 	newIdx := len(d.entries)
-	d.entries = append(d.entries, dictEntry{key: key, value: value, hash: h})
-	d.index[h] = append(d.index[h], newIdx)
+	next := -1
+	if head, ok := d.index[h]; ok {
+		next = head
+	}
+	d.entries = append(d.entries, dictEntry{key: key, value: value, hash: h, next: next})
+	d.index[h] = newIdx
 	return nil
 }
 
@@ -291,30 +338,31 @@ func (d *DictObject) DelItem(key Object) error {
 	if err != nil {
 		return err
 	}
-	indices := d.index[h]
-	for i, idx := range indices {
-		eq, err := objectsEqual(d.entries[idx].key, key)
-		if err != nil {
-			return err
-		}
-		if eq {
-			// Remove from entries (maintain relative order).
-			d.entries = append(d.entries[:idx], d.entries[idx+1:]...)
-			// Remove from index.
-			d.index[h] = append(indices[:i], indices[i+1:]...)
-			// Rebuild index for entries after the removed one (indices shifted).
-			d.rebuildIndex()
-			return nil
-		}
+	idx, err := d.find(key, h)
+	if err != nil {
+		return err
 	}
-	return fmt.Errorf("KeyError: %s", key.Repr())
+	if idx < 0 {
+		return fmt.Errorf("KeyError: %s", key.Repr())
+	}
+	// Remove from entries (maintaining order); later indices shift, so the
+	// index is rebuilt.
+	d.entries = append(d.entries[:idx], d.entries[idx+1:]...)
+	d.rebuildIndex()
+	return nil
 }
 
-// rebuildIndex rebuilds the hash → index map after a deletion.
+// rebuildIndex rebuilds the hash index after a deletion.
 func (d *DictObject) rebuildIndex() {
-	d.index = make(map[int64][]int, len(d.entries))
-	for i, e := range d.entries {
-		d.index[e.hash] = append(d.index[e.hash], i)
+	d.index = make(map[int64]int, len(d.entries))
+	for i := range d.entries {
+		e := &d.entries[i]
+		if head, ok := d.index[e.hash]; ok {
+			e.next = head
+		} else {
+			e.next = -1
+		}
+		d.index[e.hash] = i
 	}
 }
 
@@ -378,6 +426,27 @@ func objectsEqual(a, b Object) (bool, error) {
 		return false, nil // equality failures are treated as "not equal"
 	}
 	return IsTruthy(result)
+}
+
+// keysEqual is objectsEqual with fast paths for the common key types.
+func keysEqual(a, b Object) (bool, error) {
+	if a == b {
+		return true, nil
+	}
+	switch x := a.(type) {
+	case *StrObject:
+		if y, ok := b.(*StrObject); ok {
+			return x.Value == y.Value, nil
+		}
+	case *IntObject:
+		if y, ok := b.(*IntObject); ok {
+			if x.isSmall && y.isSmall {
+				return x.small == y.small, nil
+			}
+			return x.Big().Cmp(y.Big()) == 0, nil
+		}
+	}
+	return objectsEqual(a, b)
 }
 
 // resolveIndex converts a Python index (possibly negative) to a slice index.

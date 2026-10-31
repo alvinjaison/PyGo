@@ -34,6 +34,25 @@ a tagged release; everything below is on the `main` branch (`Unreleased`).
   lazy `zip`/`map`/`filter`, `divmod`, `pow` (with modulus), `bin`/`oct`/`hex`,
   `id`, `delattr`, and `slice`.
 - `set` equality and subset/superset comparisons (`==`, `<=`, `<`, `>=`, `>`).
+- Argument unpacking in calls and displays: `f(*args, **kwargs)`,
+  `[*a, *b]`, `(*a, 1)`, `{*a}`, `{**d, "k": 1}`.
+- Keyword-only parameters with defaults (`def f(a, *, flag=False)`), and
+  CPython's error messages for missing, unexpected and duplicate arguments.
+- `range` is a lazy object with `len`, indexing, slicing, constant-time `in`,
+  equality and `start`/`stop`/`step`.
+- `sorted()` and `list.sort()` accept `key=` and `reverse=` and are stable
+  O(n log n). `min()`/`max()` accept `key=` and `default=`.
+- Lists and tuples support ordering (`<`, `<=`, ...) and element-wise
+  equality; dicts support equality.
+- `type(x).__name__`, `__qualname__` and `__module__`.
+- Benchmark suite (`internal/runtime/bench_test.go`, see `BENCHMARKS.md`) and
+  golden tests that compare output with CPython (`testdata/*.py`).
+
+### Performance
+- The VM is about 2.7× faster across the benchmark suite (6.5× on method
+  calls), with up to 10× fewer allocations: unboxed 64-bit ints, int/float
+  fast paths, frame pooling, allocation-free name and attribute lookup, and a
+  lazy `range`. See `BENCHMARKS.md`.
 - Exceptions: `try`/`except`/`finally`, `raise`, custom exception classes,
   built-in exception hierarchy, and exception-safe `with` statements.
 
@@ -76,6 +95,19 @@ a tagged release; everything below is on the `main` branch (`Unreleased`).
 - `break` out of a `for` loop no longer leaks the loop iterator on the value
   stack. Enough of them used to overflow it and crash the VM.
 - `lambda` can now close over variables of an enclosing function.
+- `[1, 2] == [1, 2]` and `(1, 2) == (1, 2)` returned `False`; container
+  equality only compared identity.
+- `f(*args)` and `f(**kwargs)` silently passed nothing; keyword arguments to a
+  function with keyword-only parameters left those parameters unbound.
+- `sorted(..., reverse=True)` ignored `reverse`, and `list.sort()` was
+  quadratic.
+- `range()` with a non-integer argument silently produced an empty range; it
+  now raises `TypeError`.
+- `int / int` is correctly rounded for large values, and `hash()` of large
+  ints matches CPython.
+- Errors raised internally as plain Go errors (for example
+  `'<' not supported between instances`) surfaced as `RuntimeError`; they now
+  have their proper Python type.
 - Floats print like CPython: `3.0`, `10000000000.0`, `1e+16`, `1e-05`.
   Whole-number floats used to print without the `.0`.
 - Tracebacks report the line that raised. They used to show only the first

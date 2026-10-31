@@ -65,7 +65,7 @@ func jsonEncode(b *strings.Builder, o object.Object, indent, depth int) error {
 			b.WriteString("false")
 		}
 	case *object.IntObject:
-		b.WriteString(v.Value.String())
+		b.WriteString(v.Big().String())
 	case *object.FloatObject:
 		b.WriteString(strconv.FormatFloat(v.Value, 'g', -1, 64))
 	case *object.StrObject:

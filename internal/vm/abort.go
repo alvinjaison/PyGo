@@ -7,6 +7,10 @@ import (
 	"github.com/alvinjaison/PyGo/internal/object"
 )
 
+// ctxCheckEvery is how often (in instructions) the context is polled. It must
+// be a power of two.
+const ctxCheckEvery = 256
+
 // abortError represents a hard, non-catchable termination of execution: an
 // instruction/memory limit was exceeded, or the context was cancelled. Unlike
 // a Python exception, an abort cannot be intercepted by `except` handlers or
@@ -29,19 +33,23 @@ func (v *VM) checkAbort() *abortError {
 		return v.aborted
 	}
 
-	// Cancellation / deadline.
-	select {
-	case <-v.ctx.Done():
-		err := v.ctx.Err()
-		kind := "cancel"
-		msg := "execution cancelled"
-		if err == context.DeadlineExceeded {
-			kind = "deadline"
-			msg = "execution time limit exceeded"
+	// Cancellation / deadline, polled every ctxCheckEvery instructions: a
+	// channel receive on every instruction is measurable overhead, and a few
+	// hundred instructions of extra latency is not.
+	if v.instrCount&(ctxCheckEvery-1) == 0 {
+		select {
+		case <-v.ctx.Done():
+			err := v.ctx.Err()
+			kind := "cancel"
+			msg := "execution cancelled"
+			if err == context.DeadlineExceeded {
+				kind = "deadline"
+				msg = "execution time limit exceeded"
+			}
+			v.aborted = &abortError{kind: kind, msg: msg, cause: err}
+			return v.aborted
+		default:
 		}
-		v.aborted = &abortError{kind: kind, msg: msg, cause: err}
-		return v.aborted
-	default:
 	}
 
 	// Instruction limit.

@@ -63,14 +63,14 @@ func buildRandom(name string) *object.ModuleObject {
 		return object.IntFrom(a + rng.Int63n(b-a+1)), nil
 	}))
 	set("choice", fn("random.choice", func(args []object.Object, _ map[string]object.Object) (object.Object, error) {
-		seq, ok := args[0].(*object.ListObject)
-		if !ok {
-			return nil, object.NewTypeError("choice() requires a list")
+		items, err := drain(args[0])
+		if err != nil {
+			return nil, object.NewTypeError("choice() requires a sequence")
 		}
-		if len(seq.Items) == 0 {
+		if len(items) == 0 {
 			return nil, object.NewException(object.TypeIndexError, "cannot choose from an empty sequence")
 		}
-		return seq.Items[rng.Intn(len(seq.Items))], nil
+		return items[rng.Intn(len(items))], nil
 	}))
 	return mod
 }

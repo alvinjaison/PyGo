@@ -552,7 +552,18 @@ Benchmarks are not run in CI by default. They are run manually or on a dedicated
 
 ### Performance baseline
 
-Establish a baseline in Phase 2 and track regressions from Phase 3 onward. The initial baseline should be documented in a `BENCHMARKS.md` file.
+The suite is in `internal/runtime/bench_test.go`; how to run it, the current
+numbers and the history are in [`BENCHMARKS.md`](../BENCHMARKS.md).
+
+### Golden CPython tests
+
+`testdata/*.py` scripts that have a sibling `.out` file are run by
+`TestGoldenCPythonOutput`, which requires PyGo's output to match byte for
+byte. The `.out` files are generated with CPython and committed:
+
+```sh
+python3 testdata/arith.py > testdata/arith.out
+```
 
 ---
 

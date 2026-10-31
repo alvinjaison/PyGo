@@ -70,6 +70,10 @@ type Frame struct {
 	// suspension point the next time it is resumed (generator.throw/close).
 	pendingThrow *object.ExceptionObject
 
+	// slots is the backing array shared by Locals and Stack; kept so a pooled
+	// frame can be reused without reallocating.
+	slots []object.Object
+
 	// Yielded is true when this frame has yielded and is suspended.
 	// Used for generator frames.
 	Yielded bool
@@ -77,20 +81,29 @@ type Frame struct {
 
 // NewFrame creates a new Frame for the given Code object.
 func NewFrame(code *bytecode.Code, globals, builtins *object.DictObject, back *Frame) *Frame {
+	// Locals and the value stack share one backing array: a call costs two
+	// allocations (frame + slots) instead of four.
+	nlocals := len(code.Varnames)
+	slots := make([]object.Object, nlocals+code.StackSize+16) // small headroom
 	f := &Frame{
 		Code:     code,
 		PC:       0,
-		Stack:    make([]object.Object, code.StackSize+16), // small headroom
-		Locals:   make([]object.Object, len(code.Varnames)),
-		Cells:    make([]*object.CellObject, len(code.Cellvars)),
-		FreeVars: make([]*object.CellObject, len(code.Freevars)),
+		slots:    slots,
+		Locals:   slots[:nlocals:nlocals],
+		Stack:    slots[nlocals:],
 		Globals:  globals,
 		Builtins: builtins,
 		Back:     back,
 	}
-	// Initialize cell objects.
-	for i := range f.Cells {
-		f.Cells[i] = &object.CellObject{}
+	if n := len(code.Cellvars); n > 0 {
+		f.Cells = make([]*object.CellObject, n)
+		cells := make([]object.CellObject, n)
+		for i := range f.Cells {
+			f.Cells[i] = &cells[i]
+		}
+	}
+	if n := len(code.Freevars); n > 0 {
+		f.FreeVars = make([]*object.CellObject, n)
 	}
 	return f
 }

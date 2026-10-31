@@ -46,6 +46,12 @@ func stackEffect(in bytecode.Instruction) int {
 	case bytecode.MATCH_CLASS:
 		return -1
 
+	case bytecode.LIST_EXTEND, bytecode.DICT_MERGE:
+		return -1
+
+	case bytecode.CALL_FUNCTION_EX:
+		return -1 - int(in.Arg&1)
+
 	case bytecode.BUILD_LIST, bytecode.BUILD_TUPLE, bytecode.BUILD_SET:
 		return 1 - int(in.Arg)
 

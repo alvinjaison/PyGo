@@ -1,10 +1,23 @@
 package object
 
-import "github.com/alvinjaison/PyGo/internal/bytecode"
-
 // GetAttr exposes list methods as bound builtins. Methods that mutate operate
 // on the list in place.
 func (l *ListObject) GetAttr(name string) (Object, error) {
+	if name == "sort" {
+		return NewBuiltin("list.sort", func(args []Object, kwargs map[string]Object) (Object, error) {
+			if len(args) != 0 {
+				return nil, NewTypeError("sort() takes no positional arguments")
+			}
+			key, reverse, err := sortOptions(kwargs)
+			if err != nil {
+				return nil, err
+			}
+			if err := SortObjects(l.Items, key, reverse); err != nil {
+				return nil, err
+			}
+			return None, nil
+		}), nil
+	}
 	m, ok := listMethods[name]
 	if !ok {
 		return nil, NewAttributeError("list", name)
@@ -143,27 +156,5 @@ var listMethods = map[string]listMethod{
 	},
 	"copy": func(l *ListObject, _ []Object) (Object, error) {
 		return NewList(l.Items), nil
-	},
-	"sort": func(l *ListObject, _ []Object) (Object, error) {
-		// In-place stable sort by default ordering.
-		items := l.Items
-		for i := 1; i < len(items); i++ {
-			key := items[i]
-			j := i - 1
-			for j >= 0 {
-				res, err := compareObjects(key, items[j], bytecode.CmpLt)
-				if err != nil {
-					return nil, err
-				}
-				less, _ := IsTruthy(res)
-				if !less {
-					break
-				}
-				items[j+1] = items[j]
-				j--
-			}
-			items[j+1] = key
-		}
-		return None, nil
 	},
 }

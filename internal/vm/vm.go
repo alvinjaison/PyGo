@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"sort"
+	"strings"
 
 	"github.com/alvinjaison/PyGo/internal/bytecode"
 	"github.com/alvinjaison/PyGo/internal/object"
@@ -18,6 +20,9 @@ import (
 // The VM is not safe for concurrent use. Create one VM per goroutine, or
 // protect access with an external lock.
 type VM struct {
+	// framePool recycles Frames of finished non-generator calls.
+	framePool []*Frame
+
 	// ctx is checked at loop backedges and call sites for cancellation.
 	ctx context.Context
 
@@ -232,7 +237,7 @@ func (v *VM) Run(frame *Frame) (result object.Object, err error) {
 			exc, isExc := stepErr.(*object.ExceptionObject)
 			if !isExc {
 				// Wrap non-exception errors as RuntimeError.
-				exc = object.NewRuntimeError(stepErr.Error())
+				exc = object.FromGoError(stepErr)
 			}
 			// Unwind the block stack, running with-statement __exit__ handlers
 			// and jumping to any exception handler found.
@@ -316,7 +321,7 @@ func (v *VM) runFrame(frame *Frame) (value object.Object, yielded bool, err erro
 			}
 			exc, isExc := stepErr.(*object.ExceptionObject)
 			if !isExc {
-				exc = object.NewRuntimeError(stepErr.Error())
+				exc = object.FromGoError(stepErr)
 			}
 			handled, propagate := v.unwind(frame, exc)
 			if handled {
@@ -402,10 +407,10 @@ func (v *VM) execute(f *Frame, instr bytecode.Instruction) (object.Object, error
 
 	case bytecode.LOAD_GLOBAL:
 		name := f.Code.Names[instr.Arg]
-		val, err := f.Globals.GetItem(object.StrFrom(name))
-		if err != nil {
-			val, err = f.Builtins.GetItem(object.StrFrom(name))
-			if err != nil {
+		val, ok := f.Globals.LookupStr(name)
+		if !ok {
+			val, ok = f.Builtins.LookupStr(name)
+			if !ok {
 				return nil, object.NewNameError(name)
 			}
 		}
@@ -639,6 +644,12 @@ func (v *VM) execute(f *Frame, instr bytecode.Instruction) (object.Object, error
 			return nil, err
 		}
 		f.Push(result)
+
+	// ---- Unpacking in calls and displays ----
+
+	case bytecode.LIST_EXTEND, bytecode.DICT_MERGE, bytecode.LIST_TO_TUPLE,
+		bytecode.LIST_TO_SET, bytecode.CALL_FUNCTION_EX:
+		return v.execUnpackOp(f, instr)
 
 	// ---- Structural pattern matching and extended unpacking ----
 
@@ -906,6 +917,14 @@ func (v *VM) execute(f *Frame, instr bytecode.Instruction) (object.Object, error
 			}
 			fn.Closure = cells
 		}
+		if flags&object.MakeFuncHasKwDefaults != 0 {
+			kwd := f.Pop().(*object.DictObject)
+			fn.KwDefaults = make(map[string]object.Object, kwd.Len())
+			for _, k := range kwd.Keys() {
+				val, _ := kwd.GetItem(k)
+				fn.KwDefaults[k.(*object.StrObject).Value] = val
+			}
+		}
 		if flags&object.MakeFuncHasDefaults != 0 {
 			defaultsTuple := f.Pop().(*object.TupleObject)
 			fn.Defaults = defaultsTuple.Items
@@ -1082,14 +1101,16 @@ func (v *VM) execute(f *Frame, instr bytecode.Instruction) (object.Object, error
 func (v *VM) callObject(caller *Frame, callee object.Object, args []object.Object, kwargs map[string]object.Object) (object.Object, error) {
 	switch fn := callee.(type) {
 	case *object.FunctionObject:
-		newFrame, err := buildFrame(fn, args, kwargs, caller)
+		newFrame, err := v.buildFrame(fn, args, kwargs, caller)
 		if err != nil {
 			return nil, err
 		}
 		if fn.Code.IsGenerator() {
 			return v.makeGenerator(fn.Name, newFrame), nil
 		}
-		return v.Run(newFrame)
+		result, err := v.Run(newFrame)
+		v.releaseFrame(newFrame)
+		return result, err
 
 	case *object.BuiltinFuncObject:
 		return fn.Call(args, kwargs)
@@ -1111,71 +1132,177 @@ func (v *VM) callObject(caller *Frame, callee object.Object, args []object.Objec
 	}
 }
 
-// buildFrame creates a new Frame for a Python function call, binding arguments to locals.
-func buildFrame(fn *object.FunctionObject, args []object.Object, kwargs map[string]object.Object, caller *Frame) (*Frame, error) {
+// buildFrame creates a new Frame for a Python function call and binds the
+// arguments to its parameter slots.
+//
+// Slot layout (set up by the compiler): positional parameters, then the
+// *args tuple (if any), then keyword-only parameters, then the **kwargs dict.
+func (v *VM) buildFrame(fn *object.FunctionObject, args []object.Object, kwargs map[string]object.Object, caller *Frame) (*Frame, error) {
 	code := fn.Code
-	frame := NewFrame(code, fn.Globals, caller.Builtins, caller)
+	frame := v.acquireFrame(code, fn.Globals, caller.Builtins, caller)
 
 	// Bind free variables from closure.
 	copy(frame.FreeVars, fn.Closure)
-
-	nargs := code.ArgCount
-	nposonly := code.PosOnlyArgCount
 	defer seedCellParams(frame)
 
-	// Bind positional arguments.
-	if len(args) < nargs-len(fn.Defaults) {
-		return nil, object.NewTypeError(
-			"%s() missing %d required positional argument(s)",
-			fn.Name, nargs-len(fn.Defaults)-len(args))
-	}
-	_ = nposonly
-	for i := 0; i < len(args) && i < nargs; i++ {
-		frame.Locals[i] = args[i]
-	}
+	nargs := code.ArgCount
+	complexSig := code.Flags&(bytecode.FlagVarargs|bytecode.FlagVarkeywords) != 0 || code.KwOnlyArgCount > 0
 
-	// Bind default values for unbound positional args.
-	for i := len(args); i < nargs; i++ {
-		defaultIdx := i - (nargs - len(fn.Defaults))
-		if defaultIdx >= 0 && defaultIdx < len(fn.Defaults) {
-			frame.Locals[i] = fn.Defaults[defaultIdx]
-		}
-	}
-
-	// Handle *args.
-	if code.HasFlag(bytecode.FlagVarargs) {
-		varargStart := nargs
-		varargItems := args[varargStart:]
-		frame.Locals[nargs] = object.NewTuple(varargItems)
-	}
-
-	// Handle **kwargs.
-	if code.HasFlag(bytecode.FlagVarkeywords) {
-		d := object.NewDict()
-		for k, v := range kwargs {
-			if err := d.SetItem(object.StrFrom(k), v); err != nil {
+	// Fast path: plain positional call of a plain signature.
+	if len(kwargs) == 0 && !complexSig && len(args) <= nargs {
+		copy(frame.Locals, args)
+		if len(args) < nargs {
+			if err := fillDefaults(fn, frame, nargs); err != nil {
 				return nil, err
 			}
 		}
-		kwargSlot := nargs
-		if code.HasFlag(bytecode.FlagVarargs) {
-			kwargSlot++
+		return frame, nil
+	}
+	return v.bindComplex(fn, frame, args, kwargs)
+}
+
+// fillDefaults supplies default values for unbound positional parameters and
+// reports the ones that are still missing.
+func fillDefaults(fn *object.FunctionObject, frame *Frame, nargs int) error {
+	var missing []string
+	for i := 0; i < nargs; i++ {
+		if frame.Locals[i] != nil {
+			continue
 		}
-		kwargSlot += code.KwOnlyArgCount
-		frame.Locals[kwargSlot] = d
+		if di := i - (nargs - len(fn.Defaults)); di >= 0 {
+			frame.Locals[i] = fn.Defaults[di]
+		} else {
+			missing = append(missing, fn.Code.Varnames[i])
+		}
+	}
+	return missingArgsError(fn.Name, "positional", missing)
+}
+
+func missingArgsError(fname, kind string, missing []string) error {
+	if len(missing) == 0 {
+		return nil
+	}
+	quoted := make([]string, len(missing))
+	for i, m := range missing {
+		quoted[i] = "'" + m + "'"
+	}
+	list := quoted[0]
+	switch {
+	case len(quoted) == 2:
+		list = quoted[0] + " and " + quoted[1]
+	case len(quoted) > 2:
+		list = strings.Join(quoted[:len(quoted)-1], ", ") + ", and " + quoted[len(quoted)-1]
+	}
+	plural := ""
+	if len(missing) > 1 {
+		plural = "s"
+	}
+	return object.NewTypeError("%s() missing %d required %s argument%s: %s",
+		fname, len(missing), kind, plural, list)
+}
+
+// bindComplex binds arguments for signatures with keywords, *args, **kwargs or
+// keyword-only parameters.
+func (v *VM) bindComplex(fn *object.FunctionObject, frame *Frame, args []object.Object, kwargs map[string]object.Object) (*Frame, error) {
+	code := fn.Code
+	nargs := code.ArgCount
+	hasVarargs := code.HasFlag(bytecode.FlagVarargs)
+	hasKwargs := code.HasFlag(bytecode.FlagVarkeywords)
+	kwStart := nargs
+	if hasVarargs {
+		kwStart++
+	}
+	kwEnd := kwStart + code.KwOnlyArgCount
+
+	// Positional arguments, with any excess going to *args.
+	if len(args) > nargs && !hasVarargs {
+		return nil, tooManyPositional(fn, nargs, len(args))
+	}
+	n := len(args)
+	if n > nargs {
+		n = nargs
+	}
+	copy(frame.Locals, args[:n])
+	if hasVarargs {
+		var extra []object.Object
+		if len(args) > nargs {
+			extra = args[nargs:]
+		}
+		frame.Locals[nargs] = object.NewTuple(extra)
 	}
 
+	// Keyword arguments, in sorted order so results are deterministic.
+	var extraKw *object.DictObject
+	if hasKwargs {
+		extraKw = object.NewDict()
+	}
+	names := make([]string, 0, len(kwargs))
+	for name := range kwargs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		slot := -1
+		for i := 0; i < nargs; i++ {
+			if code.Varnames[i] == name {
+				slot = i
+				break
+			}
+		}
+		if slot < 0 {
+			for i := kwStart; i < kwEnd; i++ {
+				if code.Varnames[i] == name {
+					slot = i
+					break
+				}
+			}
+		}
+		switch {
+		case slot >= 0:
+			if frame.Locals[slot] != nil {
+				return nil, object.NewTypeError("%s() got multiple values for argument '%s'", fn.Name, name)
+			}
+			frame.Locals[slot] = kwargs[name]
+		case extraKw != nil:
+			if err := extraKw.SetItem(object.StrFrom(name), kwargs[name]); err != nil {
+				return nil, err
+			}
+		default:
+			return nil, object.NewTypeError("%s() got an unexpected keyword argument '%s'", fn.Name, name)
+		}
+	}
+
+	// Defaults for positional parameters, then for keyword-only ones.
+	if err := fillDefaults(fn, frame, nargs); err != nil {
+		return nil, err
+	}
+	var missing []string
+	for i := kwStart; i < kwEnd; i++ {
+		if frame.Locals[i] != nil {
+			continue
+		}
+		if def, ok := fn.KwDefaults[code.Varnames[i]]; ok {
+			frame.Locals[i] = def
+		} else {
+			missing = append(missing, code.Varnames[i])
+		}
+	}
+	if err := missingArgsError(fn.Name, "keyword-only", missing); err != nil {
+		return nil, err
+	}
+	if extraKw != nil {
+		frame.Locals[kwEnd] = extraKw
+	}
 	return frame, nil
 }
 
 // lookupName looks up a name in locals (via the frame's globals for module scope),
 // then globals, then builtins.
 func lookupName(f *Frame, name string) (object.Object, error) {
-	key := object.StrFrom(name)
-	if val, err := f.Globals.GetItem(key); err == nil {
+	if val, ok := f.Globals.LookupStr(name); ok {
 		return val, nil
 	}
-	if val, err := f.Builtins.GetItem(key); err == nil {
+	if val, ok := f.Builtins.LookupStr(name); ok {
 		return val, nil
 	}
 	return nil, object.NewNameError(name)
@@ -1262,4 +1389,25 @@ func toException(obj object.Object) *object.ExceptionObject {
 		return object.NewException(typ, "")
 	}
 	return object.NewRuntimeError("invalid exception: %s", obj.Repr())
+}
+
+// tooManyPositional builds CPython's "takes N positional arguments" error.
+func tooManyPositional(fn *object.FunctionObject, nargs, given int) error {
+	plural := "s"
+	if nargs == 1 {
+		plural = ""
+	}
+	if nd := len(fn.Defaults); nd > 0 {
+		return object.NewTypeError("%s() takes from %d to %d positional arguments but %d %s given",
+			fn.Name, nargs-nd, nargs, given, wasWere(given))
+	}
+	return object.NewTypeError("%s() takes %d positional argument%s but %d %s given",
+		fn.Name, nargs, plural, given, wasWere(given))
+}
+
+func wasWere(n int) string {
+	if n == 1 {
+		return "was"
+	}
+	return "were"
 }

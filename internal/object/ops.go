@@ -14,6 +14,9 @@ func BinaryOp(left, right Object, op string) (Object, error) {
 }
 
 func binaryOp(left, right Object, op string) (Object, error) {
+	if res, ok := fastBinary(left, right, op); ok {
+		return res, nil
+	}
 	// User-defined classes: dispatch through dunder methods first so Python
 	// __add__/__radd__/etc. take precedence over built-in coercion.
 	if _, ok := left.(*InstanceObject); ok {
@@ -150,11 +153,11 @@ func unaryOp(val Object, op string) (Object, error) {
 	case *IntObject:
 		switch op {
 		case "-":
-			return IntFromBig(new(big.Int).Neg(n.Value)), nil
+			return IntFromBig(new(big.Int).Neg(n.Big())), nil
 		case "+":
 			return val, nil
 		case "~":
-			result := new(big.Int).Not(n.Value)
+			result := new(big.Int).Not(n.Big())
 			return IntFromBig(result), nil
 		}
 	case *FloatObject:
@@ -188,6 +191,9 @@ func CompareObjects(left, right Object, op bytecode.CompareOp) (Object, error) {
 }
 
 func compareObjects(left, right Object, op bytecode.CompareOp) (Object, error) {
+	if res, ok := fastCompare(left, right, op); ok {
+		return res, nil
+	}
 	// Identity comparisons.
 	if op == bytecode.CmpIs {
 		return BoolFrom(left == right), nil

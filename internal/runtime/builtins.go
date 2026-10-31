@@ -31,12 +31,12 @@ func (r *Runtime) installBuiltins() {
 	regType("list", object.ListType, biList)
 	regType("tuple", object.TupleType, biTuple)
 	regType("bytes", object.BytesType, biBytes)
+	regType("range", object.RangeType, biRange)
 	regType("dict", object.DictType, biDict)
 	regType("set", object.SetType, biSet)
 
 	reg("print", r.biPrint)
 	reg("len", biLen)
-	reg("range", biRange)
 	reg("abs", biAbs)
 	reg("round", biRound)
 	reg("min", biMin)
@@ -138,7 +138,7 @@ func biAbs(args []object.Object, _ map[string]object.Object) (object.Object, err
 	}
 	switch n := args[0].(type) {
 	case *object.IntObject:
-		return object.IntFromBig(new(big.Int).Abs(n.Value)), nil
+		return object.IntFromBig(new(big.Int).Abs(n.Big())), nil
 	case *object.FloatObject:
 		if n.Value < 0 {
 			return object.FloatFrom(-n.Value), nil
@@ -200,7 +200,7 @@ func biFloat(args []object.Object, _ map[string]object.Object) (object.Object, e
 	case *object.FloatObject:
 		return v, nil
 	case *object.IntObject:
-		f := new(big.Float).SetInt(v.Value)
+		f := new(big.Float).SetInt(v.Big())
 		out, _ := f.Float64()
 		return object.FloatFrom(out), nil
 	case *object.StrObject:
@@ -359,15 +359,30 @@ func biOrd(args []object.Object, _ map[string]object.Object) (object.Object, err
 	return object.IntFrom(int64(runes[0])), nil
 }
 
-func biMin(args []object.Object, _ map[string]object.Object) (object.Object, error) {
-	return minMax(args, true)
+func biMin(args []object.Object, kwargs map[string]object.Object) (object.Object, error) {
+	return minMax("min", args, kwargs, true)
 }
 
-func biMax(args []object.Object, _ map[string]object.Object) (object.Object, error) {
-	return minMax(args, false)
+func biMax(args []object.Object, kwargs map[string]object.Object) (object.Object, error) {
+	return minMax("max", args, kwargs, false)
 }
 
-func minMax(args []object.Object, wantMin bool) (object.Object, error) {
+func minMax(name string, args []object.Object, kwargs map[string]object.Object, wantMin bool) (object.Object, error) {
+	var key, def object.Object
+	hasDefault := false
+	for k, v := range kwargs {
+		switch k {
+		case "key":
+			key = v
+		case "default":
+			def, hasDefault = v, true
+		default:
+			return nil, object.NewTypeError("%s() got an unexpected keyword argument '%s'", name, k)
+		}
+	}
+	if len(args) == 0 {
+		return nil, object.NewTypeError("%s expected at least 1 argument, got 0", name)
+	}
 	var items []object.Object
 	if len(args) == 1 {
 		var err error
@@ -376,23 +391,43 @@ func minMax(args []object.Object, wantMin bool) (object.Object, error) {
 			return nil, err
 		}
 	} else {
+		if hasDefault {
+			return nil, object.NewTypeError("Cannot specify a default for %s() with multiple positional arguments", name)
+		}
 		items = args
 	}
 	if len(items) == 0 {
-		return nil, object.NewValueError("min()/max() arg is an empty sequence")
+		if hasDefault {
+			return def, nil
+		}
+		return nil, object.NewValueError("%s() iterable argument is empty", name)
+	}
+	keyOf := func(o object.Object) (object.Object, error) {
+		if key == nil || object.IsNone(key) {
+			return o, nil
+		}
+		return object.Invoke(key, []object.Object{o})
 	}
 	best := items[0]
+	bestKey, err := keyOf(best)
+	if err != nil {
+		return nil, err
+	}
+	op := object.OpLt
+	if !wantMin {
+		op = object.OpGt
+	}
 	for _, it := range items[1:] {
-		op := object.OpLt
-		if !wantMin {
-			op = object.OpGt
+		k, err := keyOf(it)
+		if err != nil {
+			return nil, err
 		}
-		res, err := object.CompareObjects(it, best, cmpToBytecode(op))
+		res, err := object.CompareObjects(k, bestKey, cmpToBytecode(op))
 		if err != nil {
 			return nil, err
 		}
 		if t, _ := object.IsTruthy(res); t {
-			best = it
+			best, bestKey = it, k
 		}
 	}
 	return best, nil
@@ -442,33 +477,45 @@ func biEnumerate(args []object.Object, _ map[string]object.Object) (object.Objec
 
 func biRange(args []object.Object, _ map[string]object.Object) (object.Object, error) {
 	var start, stop, step int64 = 0, 0, 1
+	nums := make([]int64, len(args))
+	for i, a := range args {
+		n, err := rangeArg(a)
+		if err != nil {
+			return nil, err
+		}
+		nums[i] = n
+	}
 	switch len(args) {
 	case 1:
-		stop = mustInt(args[0])
+		stop = nums[0]
 	case 2:
-		start = mustInt(args[0])
-		stop = mustInt(args[1])
+		start, stop = nums[0], nums[1]
 	case 3:
-		start = mustInt(args[0])
-		stop = mustInt(args[1])
-		step = mustInt(args[2])
+		start, stop, step = nums[0], nums[1], nums[2]
 	default:
 		return nil, object.NewTypeError("range expected 1 to 3 arguments, got %d", len(args))
 	}
 	if step == 0 {
 		return nil, object.NewValueError("range() arg 3 must not be zero")
 	}
-	var items []object.Object
-	if step > 0 {
-		for i := start; i < stop; i += step {
-			items = append(items, object.IntFrom(i))
+	return object.NewRange(start, stop, step), nil
+}
+
+// rangeArg converts a range() argument to int64, rejecting non-integers.
+func rangeArg(o object.Object) (int64, error) {
+	switch v := o.(type) {
+	case *object.IntObject:
+		if n, ok := v.Int64(); ok {
+			return n, nil
 		}
-	} else {
-		for i := start; i > stop; i += step {
-			items = append(items, object.IntFrom(i))
+		return 0, object.NewException(object.TypeOverflowError, "Python int too large to convert to C long")
+	case *object.BoolObject:
+		if v.Value {
+			return 1, nil
 		}
+		return 0, nil
 	}
-	return object.NewList(items), nil
+	return 0, object.NewTypeError("'%s' object cannot be interpreted as an integer", o.Type().Name())
 }
 
 func mustInt(o object.Object) int64 {
@@ -558,28 +605,21 @@ func absInt(n int) int {
 	return n
 }
 
-func biSorted(args []object.Object, _ map[string]object.Object) (object.Object, error) {
-	if len(args) == 0 {
-		return nil, object.NewTypeError("sorted expected 1 argument")
+func biSorted(args []object.Object, kwargs map[string]object.Object) (object.Object, error) {
+	if len(args) != 1 {
+		return nil, object.NewTypeError("sorted expected 1 argument, got %d", len(args))
 	}
 	items, err := iterateAll(args[0])
 	if err != nil {
 		return nil, err
 	}
-	// Copy so we don't mutate the source.
-	out := append([]object.Object{}, items...)
-	var sortErr error
-	sortStable(out, func(a, b object.Object) bool {
-		res, err := object.CompareObjects(a, b, cmpToBytecode(object.OpLt))
-		if err != nil {
-			sortErr = err
-			return false
-		}
-		t, _ := object.IsTruthy(res)
-		return t
-	})
-	if sortErr != nil {
-		return nil, sortErr
+	key, reverse, err := object.SortOptions(kwargs)
+	if err != nil {
+		return nil, err
+	}
+	out := append([]object.Object{}, items...) // never mutate the source
+	if err := object.SortObjects(out, key, reverse); err != nil {
+		return nil, err
 	}
 	return object.NewList(out), nil
 }
@@ -638,17 +678,6 @@ func anyAll(args []object.Object, wantTrue bool) (object.Object, error) {
 }
 
 // sortStable is a simple insertion sort (stable) over Objects using less.
-func sortStable(items []object.Object, less func(a, b object.Object) bool) {
-	for i := 1; i < len(items); i++ {
-		key := items[i]
-		j := i - 1
-		for j >= 0 && less(key, items[j]) {
-			items[j+1] = items[j]
-			j--
-		}
-		items[j+1] = key
-	}
-}
 
 // property(fget[, fset]) — creates a property descriptor.
 func biProperty(args []object.Object, _ map[string]object.Object) (object.Object, error) {

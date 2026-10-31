@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"strconv"
 	"strings"
+	"sync/atomic"
 )
 
 // ============================================================
@@ -76,8 +77,22 @@ func (b *BoolObject) IsTrue() (bool, error) { return b.Value, nil }
 // ============================================================
 
 // IntObject represents a Python integer (arbitrary precision).
+//
+// Values that fit in an int64 are stored unboxed in small; only larger values
+// carry a *big.Int. Use Big() to get a *big.Int for either; the result must not
+// be modified. IntObjects are immutable.
 type IntObject struct {
-	Value *big.Int
+	bv      *big.Int // nil when isSmall
+	small   int64
+	isSmall bool
+}
+
+// Big returns the value as a *big.Int. The result must be treated as read-only.
+func (i *IntObject) Big() *big.Int {
+	if i.isSmall {
+		return big.NewInt(i.small)
+	}
+	return i.bv
 }
 
 // small-integer cache: -5 through 256, matching CPython.
@@ -90,7 +105,7 @@ var smallInts [smallIntMax - smallIntMin + 1]*IntObject
 
 func init() {
 	for i := range smallInts {
-		smallInts[i] = &IntObject{Value: big.NewInt(int64(i + smallIntMin))}
+		smallInts[i] = newInt64(int64(i + smallIntMin))
 	}
 }
 
@@ -100,44 +115,76 @@ func IntFrom(n int64) *IntObject {
 	if n >= smallIntMin && n <= smallIntMax {
 		return smallInts[n-smallIntMin]
 	}
-	return &IntObject{Value: big.NewInt(n)}
+	return newInt64(n)
+}
+
+// newInt64 builds an unboxed int64-backed IntObject.
+func newInt64(n int64) *IntObject {
+	return &IntObject{small: n, isSmall: true}
 }
 
 // IntFromBig returns an IntObject wrapping a *big.Int.
 func IntFromBig(n *big.Int) *IntObject {
 	if n.IsInt64() {
-		v := n.Int64()
-		if v >= smallIntMin && v <= smallIntMax {
-			return smallInts[v-smallIntMin]
-		}
+		return IntFrom(n.Int64())
 	}
-	return &IntObject{Value: new(big.Int).Set(n)}
+	return &IntObject{bv: new(big.Int).Set(n)}
 }
 
 func (i *IntObject) Type() *TypeObject { return IntType }
-func (i *IntObject) String() string    { return i.Value.String() }
-func (i *IntObject) Repr() string      { return i.String() }
-func (i *IntObject) Hash() (int64, error) {
-	// Must match: hash(1) == hash(1.0) == hash(True)
-	// For integers that fit in int64, use the value directly.
-	if i.Value.IsInt64() {
-		return i.Value.Int64(), nil
+func (i *IntObject) String() string {
+	if i.isSmall {
+		return intString(i.small)
 	}
-	// For big integers, reduce modulo 2^61 - 1 (Python's HASH_MODULUS).
+	return i.bv.String()
+}
+func (i *IntObject) Repr() string { return i.String() }
+func (i *IntObject) Hash() (int64, error) {
+	// Must match CPython: hash(1) == hash(1.0) == hash(True), and larger
+	// integers are reduced modulo 2^61 - 1 keeping their sign.
 	const hashModulus = (1 << 61) - 1
-	mod := new(big.Int).Mod(i.Value, big.NewInt(hashModulus))
-	h := mod.Int64()
+	var h int64
+	if i.isSmall {
+		n := i.small
+		if n > -hashModulus && n < hashModulus {
+			h = n
+		} else {
+			neg := n < 0
+			u := uint64(n)
+			if neg {
+				u = -u
+			}
+			h = int64(u % hashModulus)
+			if neg {
+				h = -h
+			}
+		}
+	} else {
+		abs := new(big.Int).Abs(i.bv)
+		h = new(big.Int).Mod(abs, big.NewInt(hashModulus)).Int64()
+		if i.bv.Sign() < 0 {
+			h = -h
+		}
+	}
 	if h == -1 {
 		h = -2 // -1 is reserved as the error sentinel in CPython
 	}
 	return h, nil
 }
-func (i *IntObject) IsTrue() (bool, error) { return i.Value.Sign() != 0, nil }
+func (i *IntObject) IsTrue() (bool, error) {
+	if i.isSmall {
+		return i.small != 0, nil
+	}
+	return i.bv.Sign() != 0, nil
+}
 
 // Int64 returns the int64 value of this integer, and whether it fits.
 func (i *IntObject) Int64() (int64, bool) {
-	if i.Value.IsInt64() {
-		return i.Value.Int64(), true
+	if i.isSmall {
+		return i.small, true
+	}
+	if i.bv.IsInt64() {
+		return i.bv.Int64(), true
 	}
 	return 0, false
 }
@@ -204,6 +251,7 @@ func floatBits(v *float64) uint64 {
 // StrObject represents a Python str (Unicode string).
 type StrObject struct {
 	Value string
+	hash  int64 // cached hash; 0 means not yet computed (accessed atomically)
 }
 
 // strInternCache caches short strings. Strings up to 32 bytes are interned.
@@ -239,18 +287,31 @@ func (s *StrObject) Repr() string {
 	return q
 }
 func (s *StrObject) Hash() (int64, error) {
-	// TODO: Use seeded SipHash for hash randomization (Phase 2).
-	// Placeholder: FNV-1a. Use uint64 arithmetic, then cast to int64.
+	if h := atomic.LoadInt64(&s.hash); h != 0 {
+		return h, nil
+	}
+	h := hashString(s.Value)
+	atomic.StoreInt64(&s.hash, h)
+	return h, nil
+}
+
+// hashString is the string hash used for StrObject and for string-keyed
+// lookups that never build a StrObject.
+func hashString(str string) int64 {
+	// TODO: Use seeded SipHash for hash randomization.
 	var h uint64 = 14695981039346656037 // FNV-1a offset basis
-	for _, c := range s.Value {
-		h ^= uint64(c)
+	for i := 0; i < len(str); i++ {
+		h ^= uint64(str[i])
 		h *= 1099511628211
 	}
 	result := int64(h)
 	if result == -1 {
 		result = -2
 	}
-	return result, nil
+	if result == 0 {
+		result = 1 // 0 marks "not cached" in StrObject
+	}
+	return result
 }
 func (s *StrObject) IsTrue() (bool, error) { return len(s.Value) > 0, nil }
 func (s *StrObject) Len() int              { return len([]rune(s.Value)) } // Unicode codepoint length

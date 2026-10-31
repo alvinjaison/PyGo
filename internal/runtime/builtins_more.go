@@ -225,16 +225,16 @@ func biPow(args []object.Object, _ map[string]object.Object) (object.Object, err
 		if !ok1 || !ok2 || !ok3 {
 			return nil, object.NewTypeError("pow() 3rd argument not allowed unless all arguments are integers")
 		}
-		if m.Value.Sign() == 0 {
+		if m.Big().Sign() == 0 {
 			return nil, object.NewValueError("pow() 3rd argument cannot be 0")
 		}
-		if e.Value.Sign() < 0 {
+		if e.Big().Sign() < 0 {
 			return nil, object.NewValueError("pow() with a negative exponent and modulus is not supported")
 		}
 		// Python's result takes the sign of the modulus.
-		res := new(big.Int).Exp(b.Value, e.Value, new(big.Int).Abs(m.Value))
-		if res.Sign() != 0 && m.Value.Sign() < 0 {
-			res.Add(res, m.Value)
+		res := new(big.Int).Exp(b.Big(), e.Big(), new(big.Int).Abs(m.Big()))
+		if res.Sign() != 0 && m.Big().Sign() < 0 {
+			res.Add(res, m.Big())
 		}
 		return object.IntFromBig(res), nil
 	}
@@ -248,7 +248,7 @@ func biRadix(args []object.Object, name string, base int, prefix string) (object
 	var n *big.Int
 	switch v := args[0].(type) {
 	case *object.IntObject:
-		n = v.Value
+		n = v.Big()
 	case *object.BoolObject:
 		n = big.NewInt(0)
 		if v.Value {

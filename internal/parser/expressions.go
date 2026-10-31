@@ -583,7 +583,7 @@ func (p *Parser) parseParenOrTuple() ast.Expr {
 		return ast.SetPos(&ast.Tuple{Elts: nil, Ctx: ast.Load}, pos)
 	}
 
-	first := p.parseExpr()
+	first := p.parseExprOrStar()
 
 	// Generator expression: (x for ...)
 	if p.check(lexer.FOR) {
@@ -602,7 +602,7 @@ func (p *Parser) parseParenOrTuple() ast.Expr {
 		if p.check(lexer.RPAREN) {
 			break
 		}
-		elts = append(elts, p.parseExpr())
+		elts = append(elts, p.parseExprOrStar())
 	}
 	p.expect(lexer.RPAREN)
 	return ast.SetPos(&ast.Tuple{Elts: elts, Ctx: ast.Load}, pos)
@@ -616,7 +616,7 @@ func (p *Parser) parseListOrComp() ast.Expr {
 		return ast.SetPos(&ast.List{Elts: nil, Ctx: ast.Load}, pos)
 	}
 
-	first := p.parseExpr()
+	first := p.parseExprOrStar()
 	if p.check(lexer.FOR) {
 		gens := p.parseComprehensionClauses()
 		p.expect(lexer.RBRACKET)
@@ -628,7 +628,7 @@ func (p *Parser) parseListOrComp() ast.Expr {
 		if p.check(lexer.RBRACKET) {
 			break
 		}
-		elts = append(elts, p.parseExpr())
+		elts = append(elts, p.parseExprOrStar())
 	}
 	p.expect(lexer.RBRACKET)
 	return ast.SetPos(&ast.List{Elts: elts, Ctx: ast.Load}, pos)
@@ -637,13 +637,15 @@ func (p *Parser) parseListOrComp() ast.Expr {
 func (p *Parser) parseDictOrSet() ast.Expr {
 	pos := p.pos()
 	p.expect(lexer.LBRACE)
-
 	if p.accept(lexer.RBRACE) {
 		return ast.SetPos(&ast.Dict{}, pos) // empty dict
 	}
-
-	first := p.parseExpr()
-
+	// {**mapping, ...} starts a dict display with an unpacking entry. The
+	// parser represents **mapping as a nil key.
+	if p.accept(lexer.DOUBLESTAR) {
+		return p.parseDictRest(pos, []ast.Expr{nil}, []ast.Expr{p.parseExpr()})
+	}
+	first := p.parseExprOrStar()
 	if p.accept(lexer.COLON) {
 		// Dict
 		firstVal := p.parseExpr()
@@ -652,20 +654,8 @@ func (p *Parser) parseDictOrSet() ast.Expr {
 			p.expect(lexer.RBRACE)
 			return ast.SetPos(&ast.DictComp{Key: first, Value: firstVal, Generators: gens}, pos)
 		}
-		keys := []ast.Expr{first}
-		values := []ast.Expr{firstVal}
-		for p.accept(lexer.COMMA) {
-			if p.check(lexer.RBRACE) {
-				break
-			}
-			keys = append(keys, p.parseExpr())
-			p.expect(lexer.COLON)
-			values = append(values, p.parseExpr())
-		}
-		p.expect(lexer.RBRACE)
-		return ast.SetPos(&ast.Dict{Keys: keys, Values: values}, pos)
+		return p.parseDictRest(pos, []ast.Expr{first}, []ast.Expr{firstVal})
 	}
-
 	// Set
 	if p.check(lexer.FOR) {
 		gens := p.parseComprehensionClauses()
@@ -677,10 +667,30 @@ func (p *Parser) parseDictOrSet() ast.Expr {
 		if p.check(lexer.RBRACE) {
 			break
 		}
-		elts = append(elts, p.parseExpr())
+		elts = append(elts, p.parseExprOrStar())
 	}
 	p.expect(lexer.RBRACE)
 	return ast.SetPos(&ast.Set{Elts: elts}, pos)
+}
+
+// parseDictRest parses the remaining entries of a dict display after the first
+// one, including **mapping entries (nil key).
+func (p *Parser) parseDictRest(pos ast.Position, keys, values []ast.Expr) ast.Expr {
+	for p.accept(lexer.COMMA) {
+		if p.check(lexer.RBRACE) {
+			break
+		}
+		if p.accept(lexer.DOUBLESTAR) {
+			keys = append(keys, nil)
+			values = append(values, p.parseExpr())
+			continue
+		}
+		keys = append(keys, p.parseExpr())
+		p.expect(lexer.COLON)
+		values = append(values, p.parseExpr())
+	}
+	p.expect(lexer.RBRACE)
+	return ast.SetPos(&ast.Dict{Keys: keys, Values: values}, pos)
 }
 
 func (p *Parser) parseComprehensionClauses() []*ast.Comprehension {

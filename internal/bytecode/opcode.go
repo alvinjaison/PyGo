@@ -189,6 +189,12 @@ const (
 	MATCH_KEY     Opcode = 34 // pop key; if in mapping TOS push value, True; else push False
 	MATCH_REST    Opcode = 35 // pop tuple of keys; push copy of mapping TOS without them
 	MATCH_CLASS   Opcode = 36 // arg = positional count; pop kwnames, cls, subject; push attrs tuple, True | False
+
+	// Unpacking in calls and displays: f(*a, **k), [*a, 1], {**d}.
+	LIST_EXTEND   Opcode = 37 // pop iterable; extend the list now on top
+	DICT_MERGE    Opcode = 38 // arg 1: pop mapping, merge into dict on top, rejecting duplicate keys (calls); arg 0: update
+	LIST_TO_TUPLE Opcode = 39 // replace the list on top with a tuple
+	LIST_TO_SET   Opcode = 40 // replace the list on top with a set
 )
 
 // UNPACK_EX argument layout: the number of targets before the starred target
@@ -346,6 +352,11 @@ var opInfos = map[Opcode]OpInfo{
 	MATCH_KEY:     {"MATCH_KEY", false},
 	MATCH_REST:    {"MATCH_REST", false},
 	MATCH_CLASS:   {"MATCH_CLASS", true},
+
+	LIST_EXTEND:   {"LIST_EXTEND", false},
+	DICT_MERGE:    {"DICT_MERGE", true},
+	LIST_TO_TUPLE: {"LIST_TO_TUPLE", false},
+	LIST_TO_SET:   {"LIST_TO_SET", false},
 
 	EXTENDED_ARG: {"EXTENDED_ARG", true},
 	PRINT_EXPR:   {"PRINT_EXPR", false},

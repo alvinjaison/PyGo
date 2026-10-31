@@ -1,5 +1,7 @@
 package object
 
+import "fmt"
+
 // TypeObject represents a Python type (class).
 // Both built-in types (int, str, list) and user-defined classes
 // are *TypeObject values.
@@ -134,7 +136,14 @@ func (t *TypeObject) Dict() *DictObject { return t.dict }
 func (t *TypeObject) GetAttr(name string) (Object, error) {
 	attr := lookupInMRO(t, name)
 	if attr == nil {
-		return nil, NewAttributeError(t.name, name)
+		switch name {
+		case "__name__", "__qualname__":
+			return StrFrom(t.name), nil
+		case "__module__":
+			return StrFrom("builtins"), nil
+		}
+		return nil, NewException(TypeAttributeError,
+			fmt.Sprintf("type object '%s' has no attribute '%s'", t.name, name))
 	}
 	switch a := attr.(type) {
 	case *ClassMethodObject:
@@ -292,6 +301,9 @@ var (
 	// FrozenSetType is the type of frozenset objects.
 	FrozenSetType *TypeObject
 
+	// RangeType is the type of range objects.
+	RangeType *TypeObject
+
 	// SliceType is the type of slice objects.
 	SliceType *TypeObject
 
@@ -337,6 +349,7 @@ func init() {
 	DictType = newTypeObject("dict", []*TypeObject{ObjectType}, TypeSlots{})
 	SetType = newTypeObject("set", []*TypeObject{ObjectType}, TypeSlots{})
 	FrozenSetType = newTypeObject("frozenset", []*TypeObject{ObjectType}, TypeSlots{})
+	RangeType = newTypeObject("range", []*TypeObject{ObjectType}, TypeSlots{})
 	SliceType = newTypeObject("slice", []*TypeObject{ObjectType}, TypeSlots{})
 	FunctionType = newTypeObject("function", []*TypeObject{ObjectType}, TypeSlots{})
 	BuiltinFunctionType = newTypeObject("builtin_function_or_method", []*TypeObject{ObjectType}, TypeSlots{})

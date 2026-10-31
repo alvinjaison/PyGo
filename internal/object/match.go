@@ -1,5 +1,7 @@
 package object
 
+import "strings"
+
 // Hooks for structural pattern matching and isinstance on class-like objects
 // that are not plain *TypeObject values.
 
@@ -50,4 +52,30 @@ func IsInstanceOfClass(obj, cls Object) (isInstance, ok bool) {
 		return it.IsInstance(obj), true
 	}
 	return false, false
+}
+
+// FromGoError converts a Go error raised inside the object model into a Python
+// exception. Errors written as "TypeError: message" (an older convention in
+// this package) become that exception type; anything else is a RuntimeError.
+func FromGoError(err error) *ExceptionObject {
+	if exc, ok := err.(*ExceptionObject); ok {
+		return exc
+	}
+	msg := err.Error()
+	if i := strings.Index(msg, ": "); i > 0 {
+		if t, ok := goErrorTypes[msg[:i]]; ok {
+			return NewException(t(), msg[i+2:])
+		}
+	}
+	return NewRuntimeError(msg)
+}
+
+var goErrorTypes = map[string]func() *TypeObject{
+	"TypeError":           func() *TypeObject { return TypeTypeError },
+	"ValueError":          func() *TypeObject { return TypeValueError },
+	"KeyError":            func() *TypeObject { return TypeKeyError },
+	"IndexError":          func() *TypeObject { return TypeIndexError },
+	"AttributeError":      func() *TypeObject { return TypeAttributeError },
+	"ZeroDivisionError":   func() *TypeObject { return TypeZeroDivisionError },
+	"NotImplementedError": func() *TypeObject { return TypeNotImplementedError },
 }

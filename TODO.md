@@ -12,6 +12,12 @@ the user-facing note to `CHANGELOG.md`.
 - [ ] `input`, `open` (need a file object and restricted-mode handling)
 - [ ] Set operators (`|`, `&`, `-`, `^`) and set methods: check coverage
 
+## Correctness found during benchmarking
+- [ ] Remaining `fmt.Errorf("TypeError: ...")` sites should build real
+      exceptions directly (they are converted at the VM boundary today)
+- [ ] `**kwargs` key order: the call machinery passes a Go map, so order is
+      not the caller's order (CPython preserves it)
+
 ## Lexer and diagnostics
 - [ ] Token positions are end positions; report start line/column
 - [ ] Compile errors should include the file name and column
@@ -34,8 +40,13 @@ the user-facing note to `CHANGELOG.md`.
 - [ ] `isinstance` against stdlib factory types is unreliable
 
 ## Performance
-- [ ] Benchmark suite
-- [ ] Profile and optimise the VM loop (`checkAbort` runs every instruction)
+- [x] Benchmark suite (`BENCHMARKS.md`)
+- [x] First optimisation pass: unboxed ints, fast paths, frame pooling,
+      allocation-free lookups, lazy `range` (2.7× geomean)
+- [ ] Per-call-site attribute/method caches; skip bound-method allocation for
+      `obj.method(...)` (needs a LOAD_METHOD/CALL_METHOD pair)
+- [ ] Avoid allocating a builtin wrapper for every `list.append` etc. access
+- [ ] Run benchmarks on a schedule and track regressions
 
 ## Docs
 - [ ] Align `docs/cli.md` and `docs/architecture.md` with the implementation

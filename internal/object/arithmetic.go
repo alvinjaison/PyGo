@@ -29,7 +29,7 @@ func installCoreSlots() {
 func toBig(o Object) (*big.Int, bool) {
 	switch v := o.(type) {
 	case *IntObject:
-		return v.Value, true
+		return v.Big(), true
 	case *BoolObject:
 		if v.Value {
 			return big.NewInt(1), true
@@ -44,7 +44,7 @@ func toFloat(o Object) (float64, bool) {
 	case *FloatObject:
 		return v.Value, true
 	case *IntObject:
-		f := new(big.Float).SetInt(v.Value)
+		f := new(big.Float).SetInt(v.Big())
 		out, _ := f.Float64()
 		return out, true
 	case *BoolObject:
@@ -71,6 +71,20 @@ func numericBinary(a, b Object, op string) (Object, error) {
 		ai, _ := toBig(a)
 		bi, _ := toBig(b)
 		return intArith(ai, bi, op)
+	}
+	// int / int is correctly rounded from the exact rational, as in CPython,
+	// rather than dividing two possibly-rounded float conversions.
+	if op == "/" && isIntLike(a) && isIntLike(b) {
+		ai, _ := toBig(a)
+		bi, _ := toBig(b)
+		if bi.Sign() == 0 {
+			return nil, NewException(TypeZeroDivisionError, "division by zero")
+		}
+		f, _ := new(big.Rat).SetFrac(ai, bi).Float64()
+		if f == 0 && (ai.Sign() < 0) != (bi.Sign() < 0) {
+			f = math.Copysign(0, -1) // Rat has no negative zero
+		}
+		return FloatFrom(f), nil
 	}
 	// Otherwise, if both are numeric, use float arithmetic.
 	af, aok := toFloat(a)

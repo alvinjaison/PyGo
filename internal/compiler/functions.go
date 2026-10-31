@@ -92,6 +92,21 @@ func (c *compiler) compileFunctionObject(name string, args *ast.Arguments, body 
 		flags |= uint32(bytecode.MakeFuncHasDefaults)
 	}
 
+	// Keyword-only defaults, as a {name: value} dict.
+	if args != nil {
+		n := 0
+		for i, a := range args.KwonlyArgs {
+			if i < len(args.KwDefaults) && args.KwDefaults[i] != nil {
+				c.emit(bytecode.LOAD_CONST, c.constIndex(a.Arg))
+				c.compileExpr(args.KwDefaults[i])
+				n++
+			}
+		}
+		if n > 0 {
+			c.emit(bytecode.BUILD_MAP, uint32(n))
+			flags |= uint32(bytecode.MakeFuncHasKwDefaults)
+		}
+	}
 	// Emit closure cells if the function has free variables.
 	if len(sub.freevars) > 0 {
 		for _, fv := range sub.freevars {

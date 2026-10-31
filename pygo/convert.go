@@ -226,7 +226,7 @@ func pythonToGoNatural(o object.Object) interface{} {
 		if n, ok := x.Int64(); ok {
 			return n
 		}
-		return x.Value // *big.Int
+		return x.Big() // *big.Int
 	case *object.FloatObject:
 		return x.Value
 	case *object.StrObject:
@@ -271,7 +271,7 @@ func asFloat64(o object.Object) (float64, error) {
 	case *object.FloatObject:
 		return x.Value, nil
 	case *object.IntObject:
-		f := new(big.Float).SetInt(x.Value)
+		f := new(big.Float).SetInt(x.Big())
 		out, _ := f.Float64()
 		return out, nil
 	case *object.BoolObject:

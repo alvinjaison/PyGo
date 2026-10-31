@@ -256,7 +256,7 @@ func (o *InstanceObject) GetAttr(name string) (Object, error) {
 	}
 
 	// Instance dict.
-	if v, err := o.dict.GetItem(StrFrom(name)); err == nil {
+	if v, ok := o.dict.LookupStr(name); ok {
 		return v, nil
 	}
 
@@ -297,7 +297,7 @@ func (o *InstanceObject) Dict() *DictObject { return o.dict }
 // lookupInMRO searches a type's MRO for an attribute, returning nil if absent.
 func lookupInMRO(t *TypeObject, name string) Object {
 	for _, base := range t.MRO() {
-		if v, err := base.dict.GetItem(StrFrom(name)); err == nil {
+		if v, ok := base.dict.LookupStr(name); ok {
 			return v
 		}
 	}

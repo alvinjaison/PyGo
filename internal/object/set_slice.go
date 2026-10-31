@@ -101,6 +101,60 @@ func (s *SetObject) Items() []Object {
 	return items
 }
 
+// isSubsetOf reports whether every element of s is in other.
+func (s *SetObject) isSubsetOf(other *SetObject) (bool, error) {
+	if s.count > other.count {
+		return false, nil
+	}
+	for _, el := range s.Items() {
+		ok, err := other.Contains(el)
+		if err != nil || !ok {
+			return false, err
+		}
+	}
+	return true, nil
+}
+
+// RichCompare implements ==, != and the subset/superset orderings between
+// sets. Comparing with a non-set yields NotImplemented.
+func (s *SetObject) RichCompare(other Object, op CompareOp) (Object, error) {
+	o, ok := other.(*SetObject)
+	if !ok {
+		return NotImplemented, nil
+	}
+	var res bool
+	var err error
+	switch op {
+	case OpEq, OpNotEq:
+		if s.count != o.count {
+			res = false
+		} else {
+			res, err = s.isSubsetOf(o)
+		}
+		if op == OpNotEq {
+			res = !res
+		}
+	case OpLtE:
+		res, err = s.isSubsetOf(o)
+	case OpLt:
+		if s.count < o.count {
+			res, err = s.isSubsetOf(o)
+		}
+	case OpGtE:
+		res, err = o.isSubsetOf(s)
+	case OpGt:
+		if o.count < s.count {
+			res, err = o.isSubsetOf(s)
+		}
+	default:
+		return NotImplemented, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return BoolFrom(res), nil
+}
+
 // Iter returns an iterator over the set's elements.
 func (s *SetObject) Iter() (Iterator, error) {
 	return NewList(s.Items()).Iter()

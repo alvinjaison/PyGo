@@ -48,7 +48,7 @@ func (r *Runtime) biBuildClass(args []object.Object, _ map[string]object.Object)
 
 	var bases []*object.TypeObject
 	for _, b := range args[2:] {
-		bt, ok := b.(*object.TypeObject)
+		bt, ok := object.AsClass(b)
 		if !ok {
 			return nil, object.NewTypeError("base is not a type: %s", b.Repr())
 		}

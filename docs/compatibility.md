@@ -78,12 +78,9 @@ test suite:
 Not yet implemented: keyword fields in `str.format()`, `bytearray`, custom descriptors (`__get__`/`__set__`),
 metaclasses, async/await, and most of the remaining standard library.
 
-Known gaps in the built-in namespace (each raises `NameError` today): `object`
-(so `class A(object):` fails), `zip`, `map`, `filter`, `divmod`, `pow`,
-`callable`, `issubclass`, `frozenset`, `slice`, `complex`, `format`, `bin`,
-`hex`, `oct`, `id`, `dir`, `vars`, `globals`, `locals`, `delattr`, `input` and
-`open`. Equality between `set` objects (`{1, 2} == {1, 2}`) is also not
-implemented yet.
+Known gaps in the built-in namespace (each raises `NameError` today):
+`frozenset`, `complex`, `format`, `dir`, `vars`, `globals`, `locals`, `input`
+and `open`. See `TODO.md` for the full backlog.
 
 ---
 

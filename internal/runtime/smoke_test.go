@@ -305,7 +305,7 @@ func TestDictComprehension(t *testing.T) {
 
 func TestImportMath(t *testing.T) {
 	src := "import math\nprint(math.sqrt(16))\nprint(math.floor(3.7))\n"
-	expect(t, src, "4\n3\n")
+	expect(t, src, "4.0\n3\n")
 }
 
 func TestImportMathConstants(t *testing.T) {
@@ -318,7 +318,7 @@ func TestFromImport(t *testing.T) {
 	// round() with ndigits isn't a builtin yet; use a simpler check.
 	_ = src
 	src2 := "from math import sqrt\nprint(sqrt(25))\n"
-	expect(t, src2, "5\n")
+	expect(t, src2, "5.0\n")
 }
 
 func TestImportAs(t *testing.T) {

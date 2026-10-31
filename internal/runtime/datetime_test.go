@@ -68,7 +68,7 @@ print(delta.total_seconds())
 later = start + timedelta(hours=1)
 print(later.hour)
 `
-	dtExpect(t, src, "9000\n13\n")
+	dtExpect(t, src, "9000.0\n13\n")
 }
 
 func TestTimedelta(t *testing.T) {
@@ -78,7 +78,7 @@ print(d.days)
 print(d.seconds)
 print(d.total_seconds())
 `
-	dtExpect(t, src, "2\n10800\n183600\n")
+	dtExpect(t, src, "2\n10800\n183600.0\n")
 }
 
 func TestTimedeltaArithmetic(t *testing.T) {
@@ -89,7 +89,7 @@ print((a + b).total_seconds())
 print((a - b).total_seconds())
 print(a > b)
 `
-	dtExpect(t, src, "28800\n7200\nTrue\n")
+	dtExpect(t, src, "28800.0\n7200.0\nTrue\n")
 }
 
 func TestDateStrftime(t *testing.T) {

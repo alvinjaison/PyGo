@@ -30,6 +30,10 @@ a tagged release; everything below is on the `main` branch (`Unreleased`).
   stay ordinary identifiers everywhere else.
 - Star-unpacking assignment: `first, *rest = items`, `*init, last = items`.
 - `dict(...)` and `set(...)` constructors.
+- Builtins: `object` (so `class A(object):` works), `issubclass`, `callable`,
+  lazy `zip`/`map`/`filter`, `divmod`, `pow` (with modulus), `bin`/`oct`/`hex`,
+  `id`, `delattr`, and `slice`.
+- `set` equality and subset/superset comparisons (`==`, `<=`, `<`, `>=`, `>`).
 - Exceptions: `try`/`except`/`finally`, `raise`, custom exception classes,
   built-in exception hierarchy, and exception-safe `with` statements.
 
@@ -72,6 +76,8 @@ a tagged release; everything below is on the `main` branch (`Unreleased`).
 - `break` out of a `for` loop no longer leaks the loop iterator on the value
   stack. Enough of them used to overflow it and crash the VM.
 - `lambda` can now close over variables of an enclosing function.
+- Floats print like CPython: `3.0`, `10000000000.0`, `1e+16`, `1e-05`.
+  Whole-number floats used to print without the `.0`.
 - Tracebacks report the line that raised. They used to show only the first
   statement's line of each function, because the line table was never attached
   to the compiled code.

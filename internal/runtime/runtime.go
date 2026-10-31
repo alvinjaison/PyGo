@@ -60,6 +60,7 @@ func New(cfg Config) *Runtime {
 		stdout:   cfg.Stdout,
 	}
 	r.installBuiltins()
+	r.installMoreBuiltins()
 	// Expose the builtins dict under __builtins__ for completeness.
 	_ = r.globals.SetItem(object.StrFrom("__builtins__"), r.builtins)
 	_ = r.globals.SetItem(object.StrFrom("__name__"), object.StrFrom("__main__"))

@@ -2,6 +2,7 @@ package object
 
 import (
 	"fmt"
+	"math"
 	"math/big"
 	"strconv"
 	"strings"
@@ -153,7 +154,7 @@ type FloatObject struct {
 func FloatFrom(v float64) *FloatObject { return &FloatObject{Value: v} }
 
 func (f *FloatObject) Type() *TypeObject { return FloatType }
-func (f *FloatObject) String() string    { return strconv.FormatFloat(f.Value, 'g', -1, 64) }
+func (f *FloatObject) String() string    { return formatFloat(f.Value) }
 func (f *FloatObject) Repr() string      { return f.String() }
 func (f *FloatObject) Hash() (int64, error) {
 	// hash(1.0) must equal hash(1): integers and floats that are equal share a hash.
@@ -253,3 +254,27 @@ func (s *StrObject) Hash() (int64, error) {
 }
 func (s *StrObject) IsTrue() (bool, error) { return len(s.Value) > 0, nil }
 func (s *StrObject) Len() int              { return len([]rune(s.Value)) } // Unicode codepoint length
+
+// formatFloat renders a float the way CPython's repr does: the shortest string
+// that round-trips, positional notation for decimal exponents in [-4, 16) with
+// a trailing ".0" for whole numbers, and scientific notation otherwise.
+func formatFloat(v float64) string {
+	switch {
+	case math.IsNaN(v):
+		return "nan"
+	case math.IsInf(v, 1):
+		return "inf"
+	case math.IsInf(v, -1):
+		return "-inf"
+	}
+	sci := strconv.FormatFloat(v, 'e', -1, 64) // d.ddde±XX
+	exp, _ := strconv.Atoi(sci[strings.IndexByte(sci, 'e')+1:])
+	if exp < -4 || exp >= 16 {
+		return sci
+	}
+	s := strconv.FormatFloat(v, 'f', -1, 64)
+	if !strings.ContainsRune(s, '.') {
+		s += ".0"
+	}
+	return s
+}
